@@ -14,8 +14,14 @@
 | [CONTRACT.md](CONTRACT.md) | 공통 계약 본문 (원본) |
 | [global/CLAUDE_GLOBAL.md](global/CLAUDE_GLOBAL.md) | Claude 전역 규칙에 설치할 요약본 |
 | [global/GEMINI_GLOBAL.md](global/GEMINI_GLOBAL.md) | Antigravity(Gemini) 전역 규칙에 설치할 요약본 |
-| [templates/](templates/) | 레포 `worklog/` 양식: NOW, INDEX, TASK |
+| [templates/](templates/) | 레포 `worklog/` 양식: NOW, INDEX, BADCASES, TASK |
 | [CHANGELOG.md](CHANGELOG.md) | 버전 기록 |
+
+> **현재 확정본: 태그 `v1.0`** · `main`은 v1.1-rc(검토 중): 중복 방지(§3-1), 컨텍스트 운용(§13), P0·확정 플랜·배드 케이스 평가(§14), 자원(§15)
+
+## 왜 컨텍스트 효율 도구인가
+
+`worklog/`는 타임라인·인덱스·목차로 정리되어 있어서, 에이전트가 전체 기록 대신 **필요한 조각만** 불러옵니다. 불필요한 컨텍스트는 추론 오류만 늘리므로, 세션은 항상 작은 "컨텍스트 팩"(NOW + 최근 INDEX + 진행 중 Task 요약 + 최근 배드 케이스)으로 시작합니다.
 
 ## 3단 구성
 

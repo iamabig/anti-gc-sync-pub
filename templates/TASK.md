@@ -4,11 +4,16 @@ title: 한 줄 제목
 status: 🟡
 agent: CL | AG | US
 repo: <레포 이름>
-branch: main         # 동시 작업이면 feature/<TaskID> (CONTRACT §12)
+work: <작업 키>       # 같은 일이면 재시도·이어하기도 같은 키 (CONTRACT §3-1)
+continues:           # 이어서 하는 일이면 이전 TaskID
+priority: P2         # P0 | P1 | P2 | P3 (CONTRACT §14-1)
+plan: draft          # draft | confirmed | n/a  (P0·P1은 confirmed 전 실행 금지)
+eval:                # S4에 pass | partial | bad-case
+branch: main         # 같은 폴더면 전환 금지. 동시 작업은 git worktree (CONTRACT §12-2)
 started: YYYY-MM-DD HH:mm KST
 updated: YYYY-MM-DD HH:mm KST
-commits: []          # 예: [abc1234, def5678]
-related: []          # 관련 Task ID, INBOX/OUTBOX 문서, 이슈 파일
+commits: []          # 작업 커밋 자신은 비워 두거나 ["self"] (CONTRACT §6)
+related: []          # 관련 Task ID, 이슈 파일
 escalate: no         # 레포 밖 영향이 있으면 yes (CONTRACT §7)
 ---
 
@@ -19,6 +24,7 @@ escalate: no         # 레포 밖 영향이 있으면 yes (CONTRACT §7)
 
 ## 2. 계획
 - 접근 방법. 바꿀 파일과 범위. 대안이 있었다면 왜 이 방법인지.
+- (P0·P1) 확정: 사용자 YYYY-MM-DD HH:mm
 
 ## 3. 체크리스트
 - [ ] 단계 1
@@ -43,3 +49,11 @@ escalate: no         # 레포 밖 영향이 있으면 yes (CONTRACT §7)
 ## 7. 사고 기록 (5-Step. CLI·API·테스트 실패가 있었다면 필수, 없으면 "없음")
 | ① 증상 | ② 근본 원인 | ③ 조치 | ④ 실측 검증 | ⑤ 재발 방지 |
 |---|---|---|---|---|
+
+## 8. 평가 (CONTRACT §14-3. bad-case면 필수, 아니면 한 줄)
+- 판정: pass | partial | bad-case
+- 유형: (bad-case일 때) PLAN_DEVIATION · FALSE_DONE · REWORK · SCOPE_BREACH · CONTEXT_LOSS · DUPLICATE_WORK · CONFLICT · TIME_ERROR · OTHER
+- 무슨 일이 있었나:
+- 근본 원인:
+- 교훈:
+- 재발 방지:
