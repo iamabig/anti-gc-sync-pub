@@ -52,7 +52,7 @@ escalate: no         # 레포 밖 영향이 있으면 yes (CONTRACT §7)
 
 ## 8. 평가 (CONTRACT §14-3. bad-case면 필수, 아니면 한 줄)
 - 판정: pass | partial | bad-case
-- 유형: (bad-case일 때) PLAN_DEVIATION · FALSE_DONE · REWORK · SCOPE_BREACH · CONTEXT_LOSS · DUPLICATE_WORK · CONFLICT · TIME_ERROR · OTHER
+- 유형: (bad-case일 때) PLAN_DEVIATION · FALSE_DONE · REWORK · SCOPE_BREACH · CONTEXT_LOSS · DUPLICATE_WORK · CONFLICT · TIME_ERROR · SILENT_FALLBACK · OTHER
 - 무슨 일이 있었나:
 - 근본 원인:
 - 교훈:

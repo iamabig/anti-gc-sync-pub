@@ -22,5 +22,5 @@
 - `NOW.md`: 갱신 시각·갱신자 / 🔒 작업 중 에이전트 표 / 🟡 진행 중 / 🔴 막힘 / ⏭️ 다음 할 일 / ✅ 최근 완료 3건 / ⚠️ 알아야 할 것
 - `INDEX.md`: `상태 | Task ID(링크) | 시작 | 에이전트 | 우선순위 | 작업 키 | 제목 | 평가`, 최신이 위
 - `BADCASES.md`: `일시 | Task ID | 에이전트 | 유형 | 한 줄 교훈`, 최신이 위
-- 작업 파일 머리말: `id, title, status, agent, repo, work, continues, priority, plan, eval, branch, started, updated, commits, related, escalate` / 섹션: 1 목표 · 2 계획 · 3 체크리스트 · 4 진행 로그 · 5 워크스루 · 6 인수인계 · 7 사고 기록 · 8 평가
+- 작업 파일 머리말(**파일 첫 줄부터 `---` ~ `---`**, 코드펜스 금지): `id, title, status, agent, repo, work, continues, priority, plan, eval, branch, started, updated, commits, related, escalate` / 섹션: 1 목표 · 2 계획 · 3 체크리스트 · 4 진행 로그 · 5 워크스루 · 6 인수인계 · 7 사고 기록 · 8 평가
 <!-- /anti-gc-sync-pub v1.1 -->

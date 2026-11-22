@@ -90,7 +90,7 @@
 
 ## §6. 작업 파일 필수 섹션
 
-머리말 + 8개 섹션. 양식: [templates/TASK.md](templates/TASK.md)
+**머리말은 파일 첫 줄부터 `---` ~ `---`(YAML frontmatter)** 로 씁니다. 제목이나 코드펜스(```yaml) 안에 넣지 않습니다. 그 뒤 8개 섹션. 양식: [templates/TASK.md](templates/TASK.md)
 1. 목표 · 2. 계획 · 3. 체크리스트 · 4. 진행 로그 · 5. 워크스루 · 6. 인수인계 · 7. 사고 기록 (5-Step. 실패가 있었다면 필수) · 8. 평가 (§14)
 
 머리말 필드: `id, title, status, agent, repo, work, continues, priority, plan, eval, branch, started, updated, commits, related, escalate`
@@ -199,7 +199,7 @@
 | `partial` | 일부만 달성. 남은 것을 인수인계에 |
 | `bad-case` | 아래 유형 중 하나라도 해당 |
 
-**배드 케이스 유형**: `PLAN_DEVIATION`(확정 플랜 이탈) · `FALSE_DONE`(검증 없는 완료 주장) · `REWORK`(재작업) · `SCOPE_BREACH`(허용 범위 밖 접근) · `CONTEXT_LOSS`(맥락 유실로 인한 오류) · `DUPLICATE_WORK`(중복 작업) · `CONFLICT`(동시 작업 충돌) · `TIME_ERROR`(시각·ID 오기) · `OTHER`
+**배드 케이스 유형**: `PLAN_DEVIATION`(확정 플랜 이탈) · `FALSE_DONE`(검증 없는 완료 주장) · `REWORK`(재작업) · `SCOPE_BREACH`(허용 범위 밖 접근) · `CONTEXT_LOSS`(맥락 유실로 인한 오류) · `DUPLICATE_WORK`(중복 작업) · `CONFLICT`(동시 작업 충돌) · `TIME_ERROR`(시각·ID 오기) · `SILENT_FALLBACK`(에러를 기록 없이 무시하거나 임시 하드코딩으로 덮음, Antigravity 제안) · `OTHER`
 
 - `bad-case`면 작업 파일 §8에 **유형 · 무슨 일이 있었나 · 근본 원인 · 교훈 · 재발 방지**를 쓰고, `BADCASES.md` 맨 위에 한 줄을 추가합니다.
 - 배드 케이스는 벌이 아니라 **다음 세션의 컨텍스트 팩에 들어가는 교훈**입니다 (§13-1).
