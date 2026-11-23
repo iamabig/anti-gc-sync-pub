@@ -1,0 +1,9 @@
+#!/bin/sh
+# AGS-KIT commit-msg hook (install_agentkit.ps1 이 설치) — 🔴가 있으면 커밋을 막는다
+# 메시지를 넘겨서, 지금 만드는 커밋의 [TaskID]를 커밋된 것으로 본다 (C23). 이번 커밋에 안 들어가는 주인 없는 변경은 막는다 (C22).
+PY=python; command -v python >/dev/null 2>&1 || PY=py
+"$PY" .agentkit/agentkit.py check --strict --hook --msg "$1" --since 20 >/dev/null 2>&1 || {
+  echo "AGS-KIT 🔴: 계약 위반이 있어 커밋을 멈췄습니다."
+  echo "  확인: python .agentkit/agentkit.py check --hook"
+  exit 1
+}

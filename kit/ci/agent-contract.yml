@@ -1,0 +1,54 @@
+# AGS-CI (anti-gc-sync-pub v1.2) — 레포에 넣을 위치: .github/workflows/agent-contract.yml
+# 설치·갱신은 install_agentkit.ps1이 합니다. 규격을 올릴 때 레포가 바꾸는 것은 아래 env 두 줄뿐입니다.
+# 하는 일: ① 고정 태그의 AGS-KIT를 공개 저장소에서 받아 해시 확인 ② 레포 안 사본(.agentkit/agentkit.py)과 해시 비교
+#          ③ 받은 키로 check 실행 (🔴면 실패) ④ 실행 화면(Job Summary)에 열린 결함·남은 구현 목록 출력
+name: agent-contract
+
+on:
+  pull_request:
+    paths: ["**"]
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+env:
+  AGS_KIT_REF: __AGS_KIT_REF__        # AGS-SPEC 태그
+  AGS_KIT_SHA256: __AGS_KIT_SHA256__  # 그 태그의 kit/agentkit.py SHA-256 (줄바꿈 LF 기준)
+
+jobs:
+  agentkit-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: false  # 필수 검사(기본). 경고만 하려면 설치 시 -CIWarnOnly
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 100     # C1·C11·C23이 최근 커밋을 보므로 얕은 복제 금지
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: AGS-KIT 받기 (고정 태그 + 해시 비교)
+        run: |
+          set -eu
+          url="https://raw.githubusercontent.com/iamabig/anti-gc-sync-pub/${AGS_KIT_REF}/kit/agentkit.py"
+          curl -fsSL "$url" -o "$RUNNER_TEMP/agentkit.py"
+          got=$(sha256sum "$RUNNER_TEMP/agentkit.py" | cut -d' ' -f1)
+          if [ "$got" != "$AGS_KIT_SHA256" ]; then
+            echo "::error::고정 태그 ${AGS_KIT_REF}의 AGS-KIT 해시가 기록과 다릅니다 (태그가 바뀌었을 수 있음). 받은 값 $got"; exit 1
+          fi
+          mine=$(tr -d '\r' < .agentkit/agentkit.py | sha256sum | cut -d' ' -f1)
+          if [ "$mine" != "$AGS_KIT_SHA256" ]; then
+            echo "::error::레포의 .agentkit/agentkit.py가 고정 버전(${AGS_KIT_REF})과 다릅니다. 키 사본을 직접 고치지 말고 install_agentkit.ps1로 갱신하세요"; exit 1
+          fi
+          echo "AGS-KIT ${AGS_KIT_REF} 확인 ($got)"
+      - name: agentkit check
+        run: python "$RUNNER_TEMP/agentkit.py" check --since 50 --json agentkit-report.json --summary "$GITHUB_STEP_SUMMARY" --strict
+      - name: 결과 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentkit-report
+          path: agentkit-report.json
+          retention-days: 14
