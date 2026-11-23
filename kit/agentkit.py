@@ -7,7 +7,7 @@
   context [--n 5] [--work KEY] [--max-chars 12000]
                                컨텍스트 팩 출력 (새 세션은 이것만 읽는다)
   check [--json PATH] [--summary PATH] [--strict] [--since 50] [--hook --msg FILE] [--ahead-max 3]
-                               계약 점검 C1~C28. --strict면 🔴가 있을 때 종료코드 1
+                               계약 점검 C1~C30. --strict면 🔴가 있을 때 종료코드 1
   hash <파일>                  글로벌 룰 블록의 버전과 SHA-256 (C8). 블록이 없으면 파일 전체 SHA-256
   terms <TERMS.md>             이 키의 SSOT 상수와 TERMS.md 비교 (다르면 종료코드 1)
   collab <폴더> [--forbid 문자열]… [--strict]
@@ -19,8 +19,8 @@
 """
 import sys, os, re, json, hashlib, subprocess, datetime, glob, argparse
 
-KIT_VERSION = "1.2.0"
-SPEC = "anti-gc-sync-pub v1.2"
+KIT_VERSION = "1.2.1"
+SPEC = "anti-gc-sync-pub v1.2.1"
 
 # ---- SSOT 상수 (TERMS.md와 같아야 함. `agentkit.py terms TERMS.md`로 비교) ----
 TERMS_COMPONENTS = ["AGS", "AGS-SPEC", "AGS-HQ-<코드>", "AGS-RS", "AGS-GR-<코드>", "AGS-KIT", "AGS-CI", "AGS-WL"]
@@ -44,6 +44,9 @@ RE_END = re.compile(r"■\s*종료\s*\[([A-Za-z]+)\]")
 RE_SHA = re.compile(r"배포\s*SHA\s*[=:]\s*`?([0-9a-f]{7,40})", re.I)
 RE_CLAIM = re.compile(r"100\s*%|완벽|완전(히)?\s*해결|기술적으로\s*해결|모두\s*해결|전부\s*해결|ALL\s*CLEAR|문제\s*없음", re.I)
 RE_EVIDENCE = re.compile(r"\d+\s*/\s*\d+|`[^`]+`|exit\s*=?\s*\d|\b[0-9a-f]{7,40}\b|[\w./\-]+\.(py|ts|tsx|js|md|json|log|yml)\b|https?://", re.I)
+RE_INFRA = re.compile(r"(^|/)(wrangler[^/]*\.(toml|jsonc?)|Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|Procfile)$|^\.github/workflows/(?!agent-contract\.yml$)[^/]+\.ya?ml$")
+RE_DEPLOY_CFG = re.compile(r"(^|/)wrangler[^/]*\.(toml|jsonc?)$")
+RE_OPS = re.compile(r"운영\s*(미)?\s*확인\s*[:：]\s*(.*)")
 LIST_FILES = ["worklog/INDEX.md", "worklog/BADCASES.md", "worklog/DEFECTS.md", "worklog/IMPLEMENTATION.md"]
 FAIL_WORDS = re.compile(r"실패|오류|에러|FAIL|\berror\b|exception|traceback|timeout|타임아웃", re.I)
 OPEN = ("🟡", "🔴")
@@ -327,6 +330,38 @@ def unsupported_claims(text):
         bare = re.sub(r"\"[^\"]*\"|“[^”]*”|'[^']*'", "", line)  # 남의 말을 따옴표로 인용한 것은 제외
         if RE_CLAIM.search(bare) and not RE_EVIDENCE.search(RE_CLAIM.sub("", line)):
             out.append(line.strip()[:100])
+    return out
+
+
+def unsupported_measure(text):
+    """'실측'이라고 썼는데 같은 줄에 명령·출력·해시·파일 근거가 없는 줄 (C30)."""
+    out = []
+    for line in (text or "").splitlines():
+        bare = re.sub(r"\"[^\"]*\"|“[^”]*”|'[^']*'", "", line)
+        if "실측" in bare and not RE_EVIDENCE.search(bare.replace("실측", "")):
+            out.append(line.strip()[:100])
+    return out
+
+
+def _strings(block):
+    return sorted(set(re.findall(r'"([^"\n]+)"', block or "")))
+
+
+def deploy_configs(root):
+    """배포 설정(wrangler)의 이름·cron·route (C29). 첫 'name'을 워커 이름으로 본다."""
+    out = []
+    for f in git(root, "ls-files").splitlines():
+        if not RE_DEPLOY_CFG.search(f) or "node_modules/" in f:
+            continue
+        t = read(os.path.join(root, f))
+        t = re.sub(r"(?m)^\s*(//|#).*$", "", t)
+        t = re.sub(r'(?m)(^[^"\n]*("[^"\n]*"[^"\n]*)*?)\s+//.*$', r"\1", t)
+        m = re.search(r'"name"\s*:\s*"([^"]+)"', t) or re.search(r'(?m)^name\s*=\s*"([^"]+)"', t)
+        if not m:
+            continue
+        cr = re.search(r'"?crons"?\s*[:=]\s*\[(.*?)\]', t, re.S)
+        routes = re.findall(r'"?pattern"?\s*[:=]\s*"([^"]+)"', t) + re.findall(r'(?m)^route\s*=\s*"([^"]+)"', t)
+        out.append({"file": f, "name": m.group(1), "crons": _strings(cr.group(1)) if cr else [], "routes": sorted(set(routes))})
     return out
 
 
@@ -1021,7 +1056,7 @@ def cmd_check(args):
     res.append(r("C25", "fail" if c25f else ("warn" if c25w else "pass"), f"원격 대비 위험 {len(c25f)}건 · 경고 {len(c25w)}건", c25f + c25w))
 
     # C26 남의 잠금 브랜치에 커밋 (같은 폴더 작업자 분리)
-    c26 = []
+    c26, c26w = [], []
     if not IN_CI and gst["branch"] not in ("", "HEAD"):
         own = {l["agent"] for l in locks if l["branch"] == gst["branch"]}
         start = min([parse_time(l["started"]) for l in locks if l["branch"] == gst["branch"] and parse_time(l["started"])] or [None], key=lambda x: x or datetime.datetime.max)
@@ -1029,7 +1064,7 @@ def cmd_check(args):
             if args.msg and msg_id and agent_of(msg_id) not in own:
                 c26.append(f"지금 커밋 [{msg_id}]: `{gst['branch']}`는 {', '.join(sorted(own))} 잠금 브랜치 → {agent_of(msg_id)}는 자기 잠금·브랜치(git worktree)에서 커밋")
             base = default_branch(root)
-            on_base = not base or base == gst["branch"]
+            on_base = not base or gst["branch"] in (base, "main", "master")  # origin/HEAD가 다른 브랜치를 가리켜도 main·master는 기본으로 봄
             rng = ["HEAD", "--not", "--remotes"] + ([] if on_base else [base])
             for line in git(root, "log", "--format=%h%x1f%s%x1f%ct", *rng).splitlines():
                 h, subj, ct = (line.split("\x1f") + ["", "", "0"])[:3]
@@ -1037,8 +1072,11 @@ def cmd_check(args):
                 # 기본 브랜치가 아니면 그 브랜치에만 있는 커밋 전부(시각 기록에 기대지 않음), 기본 브랜치면 잠금 시작 뒤 커밋
                 late = (not on_base) or start is None or datetime.datetime.fromtimestamp(int(ct)) >= start
                 if mm and agent_of(mm.group(1)) not in own and late:
-                    c26.append(f"{h} [{mm.group(1)}]가 {', '.join(sorted(own))} 잠금 브랜치 `{gst['branch']}`에 섞임 (push 전 분리 필요)")
-    res.append(r("C26", "fail" if c26 else ("skip" if IN_CI else "pass"), f"남의 잠금 브랜치에 커밋 {len(c26)}건", c26))
+                    if on_base:  # 기본 브랜치: 지난 잠금 기록이 없어 확정할 수 없으므로 경고 (지금 커밋은 위에서 🔴)
+                        c26w.append(f"{h} [{mm.group(1)}]: {', '.join(sorted(own))} 잠금 중인 기본 브랜치 `{gst['branch']}`에 잠금 줄 없이 커밋된 것으로 보임 (원격에 아직 없음)")
+                    else:
+                        c26.append(f"{h} [{mm.group(1)}]가 {', '.join(sorted(own))} 잠금 브랜치 `{gst['branch']}`에 섞임 (push 전 분리 필요)")
+    res.append(r("C26", "fail" if c26 else ("warn" if c26w else ("skip" if IN_CI else "pass")), f"남의 잠금 브랜치에 커밋 {len(c26)}건 · 기본 브랜치 경고 {len(c26w)}건", c26 + c26w))
 
     # C27 목록 Append-Only (지운 줄 = 기록 손실)
     c27 = []
@@ -1062,6 +1100,51 @@ def cmd_check(args):
                 for line in unsupported_claims(t["sec"].get(k, "")):
                     c28.append(f"{task_id_of(t)} §{k}: {line}")
     res.append(r("C28", "warn" if c28 else "pass", f"근거 없는 단정(100%·완벽·해결됨·ALL CLEAR) {len(c28)}건 → 같은 줄에 숫자·명령·출력·파일 근거", c28))
+
+    # C29 같은 이름의 배포 설정 중복 (v1.2.1)
+    c29, groups = [], {}
+    for c in deploy_configs(root):
+        groups.setdefault(c["name"], []).append(c)
+    for name, cs in sorted(groups.items()):
+        if len(cs) > 1:
+            diff = len({(tuple(c["crons"]), tuple(c["routes"])) for c in cs}) > 1
+            detail = " · ".join(f"`{c['file']}` cron={c['crons'] or '없음'} route={c['routes'] or '없음'}" for c in cs)
+            c29.append(f"{name}: 설정 {len(cs)}벌{' (cron·route 다름)' if diff else ''} → {detail}")
+    res.append(r("C29", "warn" if c29 else "pass", f"같은 이름의 배포 설정 중복 {len(c29)}건 (어느 파일로 배포됐는지 운영에서 확인하고 하나로 정리)", c29))
+
+    # C30 운영 확인·실측 범위 (v1.2.1, v1.2 도입 뒤 시작한 🟢 Task만)
+    c30, lv30 = [], "pass"
+    infra = {}
+    for chunk in git(root, "log", "--no-merges", f"-n{args.since}", "--format=%x1e%s", "--name-only").split("\x1e")[1:]:
+        subj, _, files = chunk.partition("\n")
+        hit = [f.strip() for f in files.split("\n") if f.strip() and RE_INFRA.search(f.strip())]
+        if hit:
+            for i in RE_ID_ANY.findall(subj):
+                infra.setdefault(i, set()).update(hit)
+
+    def bump(level):
+        nonlocal_lv = {"pass": 0, "warn": 1, "fail": 2}
+        return level if nonlocal_lv[level] > nonlocal_lv[lv30] else lv30
+
+    for t in tasks:
+        st = parse_time(t["fm"].get("started"))
+        if t["status"] != "🟢" or not (v12 and st and st >= v12.replace(second=0)):
+            continue
+        tid, sec5 = task_id_of(t), t["sec"].get(5, "")
+        dep, inf = is_deploy(t), sorted(infra.get(tid, []))
+        if dep or inf:
+            why = "운영 배포" if dep else "인프라 파일 변경(" + ", ".join(inf[:3]) + ")"
+            m = RE_OPS.search(sec5)
+            if not m or "<" in m.group(2) or len(re.sub(r"[()\s:：-]", "", m.group(2))) < 4:  # 양식 자리표시자만 있으면 빈 것
+                c30.append(f"{tid} {why}인데 워크스루에 '운영 확인: <명령/화면> → <결과>' 또는 '운영 미확인: <이유>' 줄 없음")
+                lv30 = bump("fail" if dep else "warn")
+            elif not m.group(1) and not RE_EVIDENCE.search(m.group(2)):
+                c30.append(f"{tid} '운영 확인'에 명령·출력 근거 없음: {m.group(2)[:60]}")
+                lv30 = bump("warn")
+        for line in unsupported_measure(sec5):
+            c30.append(f"{tid} §5 근거 없는 '실측': {line}")
+            lv30 = bump("warn")
+    res.append(r("C30", lv30, f"운영 확인·실측 범위 {len(c30)}건 (배포·인프라 판단은 운영 대상에서 확인한 것만 '실측')" + ("" if v12 else " (v1.2 도입 전: 건너뜀)"), c30))
 
     recent = []
     for line in index.splitlines():

@@ -1,8 +1,8 @@
-<!-- anti-gc-sync-pub v1.2 · Antigravity 글로벌 룰 (설치: ~/.gemini/GEMINI.md) -->
-# 멀티에이전트 공통 계약 v1.2 (anti-gc-sync-pub)
+<!-- anti-gc-sync-pub v1.2.1 · Antigravity 글로벌 룰 (설치: ~/.gemini/GEMINI.md) -->
+# 멀티에이전트 공통 계약 v1.2.1 (anti-gc-sync-pub)
 
 **적용 범위:** 작업 폴더가 `<REPOS_ROOT>` 아래 레포일 때만 적용합니다. 그 밖의 프로젝트에서는 이 절을 무시합니다.
-원본: https://github.com/iamabig/anti-gc-sync-pub (태그 v1.2) · 레포 `AGENTS.md`와 충돌하면 더 엄격한 쪽을 따릅니다.
+원본: https://github.com/iamabig/anti-gc-sync-pub (태그 v1.2.1) · 레포 `AGENTS.md`와 충돌하면 더 엄격한 쪽을 따릅니다.
 
 이 레포에서는 Antigravity와 Claude가 `worklog/`로 서로 소통하며 함께 작업합니다. `worklog/`는 **컨텍스트 효율 도구**입니다: 전체를 읽지 말고 목차로 필요한 조각만 불러옵니다.
 
@@ -23,6 +23,7 @@
 14. **결함**: 제품 결함은 `worklog/DEFECTS.md`에 `DEF-YYYYMMDD-NN`(`new-id DEF`) 한 줄. Task는 번호로만 참조합니다(`defects_found:`, `fixes:`). P0는 바로 담당 Task를 정해 `fixing`.
 15. **git 상태**: 잠금 영역 밖의 미커밋 변경은 남의 것일 수 있으니 건드리지 말고 주인·사용자에게 확인합니다. 배포는 **원격에 있는 SHA로만**: push(사용자 승인) 뒤 배포하고 `■ 종료 [DEPLOY] … 배포 SHA = <sha>`를 적습니다.
 16. **전달 등급**: 채팅 전달은 **알림(L0)** 일 뿐 기록이 아닙니다. 사용자에게 하는 보고는 서명급이 아니어도 **보고서 파일(L1)을 먼저** 쓰고(레포 일은 Task 파일, 본부 일은 공통 구역 `REPORT-YYYYMMDD-HHmm-AG_<slug>.md`) 채팅 끝에 그 경로를 적습니다. 에이전트 간 합의·서명은 **TURN 파일(L2)** 에서만 유효합니다. 채팅으로 전달받은 다른 에이전트의 요약·서명은 원본 파일과 대조하기 전에는 쓰지 않습니다(숫자는 원문 그대로). 문서와 목록은 지우고 다시 쓰지 않고 덧붙여 `정정:`으로 고칩니다. 남이 잠근 브랜치에는 커밋하지 않습니다. "100%·완벽·해결됨"에는 같은 줄에 근거를 붙입니다.
+17. **실측 범위**: "실측"에는 실행한 명령을 붙이고 **레포**인지 **운영**인지 구분합니다. 배포 경로·워커·예약 실행·라우트는 레포 파일만 보고 단정하지 않습니다. 레포 안 배포 설정 전체 → 배포 스크립트 → CI·자동 빌드 경로 → 운영 쪽 현재 상태 순으로 보고, 운영을 못 봤으면 "미확인"으로 적습니다. 배포·인프라를 다룬 Task 워크스루에는 `운영 확인: <읽기 전용 명령/화면> → <결과>` 또는 `운영 미확인: <이유>` 줄을 씁니다.
 
 ### worklog 양식 (요약, 전체는 원본 `templates/`)
 - `NOW.md`: 갱신 시각·갱신자 / 🔒 작업 중 에이전트 표(에이전트 · Task ID · 모드 · 브랜치 · 영역 · 시작) / 🟡 진행 중 / 🔴 막힘 / ⏭️ 다음 할 일 / ✅ 최근 완료 3건 / ⚠️ 알아야 할 것
@@ -30,4 +31,4 @@
 - `BADCASES.md`: `일시 | Task ID | 에이전트 | 유형 | 한 줄 교훈`, 최신이 위
 - `IMPLEMENTATION.md`: `번호 | 상태 | 기능 | 위치 | 화면 표시 | 실제화 조건 | 만든 Task | 실제화 Task` · `DEFECTS.md`: `번호 | 심각도 | 상태 | 한 줄 설명 | 발견 Task | 수정 Task`
 - 작업 파일 머리말(**파일 첫 줄부터 `---` ~ `---`**, 코드펜스 금지): `id, title, status, agent, repo, work, continues, mode, deploy, priority, plan, eval, branch, started, updated, commits, impl, implements, defects_found, fixes, related, escalate` / 섹션: 1 목표 · 2 계획(사전 분석) · 3 체크리스트(WBS 표) · 4 진행 로그(모드 마크) · 5 워크스루(테스트 결과·사후 분석) · 6 인수인계 · 7 사고 기록 · 8 평가
-<!-- /anti-gc-sync-pub v1.2 -->
+<!-- /anti-gc-sync-pub v1.2.1 -->
