@@ -1,3 +1,5 @@
+﻿#Requires -Version 7.0
+# PowerShell 7(pwsh)로 실행하세요. Windows PowerShell 5.1(powershell.exe)은 지원하지 않습니다.
 <#
 .SYNOPSIS
   AGS-KIT(검수 키) 설치·갱신 — 레포 하나 (사용자가 실행)
@@ -7,10 +9,11 @@
   하는 일 (모두 그 레포 안에서만, 커밋·push는 하지 않음):
     1. .agentkit\agentkit.py 복사 (줄바꿈 LF로 고정, 기존 버전 → 새 버전 표시)
     2. AGS-CI: .github\workflows\agent-contract.yml (고정 태그 + 해시. 기본: 🔴면 실패)
-    3. .gitignore 에 worklog/.agentkit-report.json, .wt/ 추가 (없을 때만)
+    3. .gitignore 에 worklog/.agentkit-report.json, .wt/, .agentshare/ 추가 (없을 때만)
     4. commit-msg 훅 설치 (v1.1 agentkit pre-commit 훅은 지움. 다른 훅이 있으면 덮어쓰지 않고 알림)
     5. worklog 양식: 없는 파일만 만듦 (v1.1 레포는 IMPLEMENTATION.md, DEFECTS.md가 추가됨)
-    6. 마지막에 agentkit.py doctor 로 설치 상태 점검
+    6. 공유 구역 .agentshare/ (gitignore, v1.2.2) 와 목차 INDEX.md
+    7. 마지막에 agentkit.py doctor 로 설치 상태 점검
 
 .EXAMPLE
   .\install_agentkit.ps1 -Repo <레포경로>
@@ -44,7 +47,8 @@ function Sha256Text($text) {
 # 0. 확인
 $Repo = (Resolve-Path $Repo).Path
 if (-not (Test-Path (Join-Path $Repo '.git'))) { throw "git 레포가 아닙니다: $Repo" }
-$py = (Get-Command python -ErrorAction SilentlyContinue) ?? (Get-Command py -ErrorAction SilentlyContinue)
+$py = Get-Command python -ErrorAction SilentlyContinue
+if (-not $py) { $py = Get-Command py -ErrorAction SilentlyContinue }
 if (-not $py) { throw "Python이 없습니다. Python 3.9 이상을 설치하세요." }
 $verLine = (& $py.Source -I $Src version)
 $newVer = $verLine -replace '^agentkit\s+(\S+).*$', '$1'
@@ -77,7 +81,7 @@ if (-not $NoCI) {
 # 3. .gitignore
 $gi = Join-Path $Repo '.gitignore'
 $cur = if (Test-Path $gi) { Get-Content $gi } else { @() }
-foreach ($line in @('worklog/.agentkit-report.json', '.wt/')) {
+foreach ($line in @('worklog/.agentkit-report.json', '.wt/', '.agentshare/')) {
   if ($cur -notcontains $line -and $PSCmdlet.ShouldProcess($gi, "추가: $line")) {
     Add-Content -Path $gi -Value $line -Encoding utf8NoBOM; Say '✅' ".gitignore += $line"
   }
@@ -107,7 +111,14 @@ if (($hasWl -or $Init) -and $PSCmdlet.ShouldProcess("$Repo\worklog", '없는 양
   Push-Location $Repo; try { & $py.Source -I $dst init --who US } finally { Pop-Location }
 }
 
-# 6. 점검
+# 6. 공유 구역 (v1.2.2, gitignore)
+$share = Join-Path $Repo '.agentshare'
+if (-not (Test-Path $share) -and $PSCmdlet.ShouldProcess($share, '공유 구역 만들기 (gitignore, 목차 INDEX.md)')) {
+  Push-Location $Repo; try { & $py.Source -I $dst share index | Out-Null } finally { Pop-Location }
+  Say '✅' '공유 구역: .agentshare/ (이 PC에만, git에 안 올라감)'
+}
+
+# 7. 점검
 if (-not $WhatIfPreference) {
   Write-Host ''
   Push-Location $Repo; try { & $py.Source -I $dst doctor } finally { Pop-Location }

@@ -17,6 +17,7 @@
 | `AGS-KIT` | 검수 키 `agentkit.py` (context · new-id · check · doctor · hash · terms · init). 원본은 이 저장소 `kit/`, 태그로 고정 | "스크립트" |
 | `AGS-CI` | 공통 CI 검사 (워크플로 `agent-contract`) | 레포 고유 CI 이름 |
 | `AGS-WL` | 레포의 `worklog/` 폴더 | "로그", "기록 폴더" |
+| `AGS-SHARE` | 레포의 `.agentshare/` 공유 구역 (gitignore, 번호 문서·자동 목차, CONTRACT §21) | "공유 폴더", "collab" |
 
 ## 2. 에이전트 코드
 

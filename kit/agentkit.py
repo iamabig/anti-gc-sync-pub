@@ -7,11 +7,12 @@
   context [--n 5] [--work KEY] [--max-chars 12000]
                                컨텍스트 팩 출력 (새 세션은 이것만 읽는다)
   check [--json PATH] [--summary PATH] [--strict] [--since 50] [--hook --msg FILE] [--ahead-max 3]
-                               계약 점검 C1~C30. --strict면 🔴가 있을 때 종료코드 1
+                               계약 점검 C1~C33. --strict면 🔴가 있을 때 종료코드 1
   hash <파일>                  글로벌 룰 블록의 버전과 SHA-256 (C8). 블록이 없으면 파일 전체 SHA-256
   terms <TERMS.md>             이 키의 SSOT 상수와 TERMS.md 비교 (다르면 종료코드 1)
   collab <폴더> [--forbid 문자열]… [--strict]
                                에이전트 간 TURN·REPORT 문서 점검 R1~R8 (머리 표, 근거, 단정, 금지 문자열, 서명 위치, Append-Only, 턴 순서, 이름)
+  share new|import|index|fleet  레포 안 공유 구역(.agentshare/, gitignore) 번호 문서·자동 목차 (v1.2.2)
   doctor [--strict]            설치 상태 점검
   version
 
@@ -19,11 +20,11 @@
 """
 import sys, os, re, json, hashlib, subprocess, datetime, glob, argparse
 
-KIT_VERSION = "1.2.1"
-SPEC = "anti-gc-sync-pub v1.2.1"
+KIT_VERSION = "1.2.2"
+SPEC = "anti-gc-sync-pub v1.2.2"
 
 # ---- SSOT 상수 (TERMS.md와 같아야 함. `agentkit.py terms TERMS.md`로 비교) ----
-TERMS_COMPONENTS = ["AGS", "AGS-SPEC", "AGS-HQ-<코드>", "AGS-RS", "AGS-GR-<코드>", "AGS-KIT", "AGS-CI", "AGS-WL"]
+TERMS_COMPONENTS = ["AGS", "AGS-SPEC", "AGS-HQ-<코드>", "AGS-RS", "AGS-GR-<코드>", "AGS-KIT", "AGS-CI", "AGS-WL", "AGS-SHARE"]
 AGENT_CODES = {"CL": "Claude", "AG": "Antigravity (Gemini)", "US": "사용자(소유자)"}
 MODES = ["THINK", "CODE", "SENSITIVE", "MAINT", "DEPLOY", "REVIEW"]
 EXCLUSIVE_MODES = ["SENSITIVE", "MAINT", "DEPLOY"]
@@ -46,6 +47,7 @@ RE_CLAIM = re.compile(r"100\s*%|완벽|완전(히)?\s*해결|기술적으로\s*�
 RE_EVIDENCE = re.compile(r"\d+\s*/\s*\d+|`[^`]+`|exit\s*=?\s*\d|\b[0-9a-f]{7,40}\b|[\w./\-]+\.(py|ts|tsx|js|md|json|log|yml)\b|https?://", re.I)
 RE_INFRA = re.compile(r"(^|/)(wrangler[^/]*\.(toml|jsonc?)|Dockerfile[^/]*|docker-compose[^/]*\.ya?ml|compose\.ya?ml|fly\.toml|vercel\.json|netlify\.toml|serverless\.ya?ml|Procfile)$|^\.github/workflows/(?!agent-contract\.yml$)[^/]+\.ya?ml$")
 RE_DEPLOY_CFG = re.compile(r"(^|/)wrangler[^/]*\.(toml|jsonc?)$")
+RE_SCOPE = re.compile(r"(\*\*적용 범위:\*\*[^`\n]*`)([^`\n]+)(`)")
 RE_OPS = re.compile(r"운영\s*(미)?\s*확인\s*[:：]\s*(.*)")
 LIST_FILES = ["worklog/INDEX.md", "worklog/BADCASES.md", "worklog/DEFECTS.md", "worklog/IMPLEMENTATION.md"]
 FAIL_WORDS = re.compile(r"실패|오류|에러|FAIL|\berror\b|exception|traceback|timeout|타임아웃", re.I)
@@ -520,8 +522,13 @@ def cmd_hash(args):
             print(f"sha256(file): {hashlib.sha256(f.read()).hexdigest()}")
         return
     block, ver = m.group(1), m.group(2)
+    sm = RE_SCOPE.search(block)
+    scope = sm.group(2) if sm else None
+    norm = RE_SCOPE.sub(lambda x: x.group(1) + "<REPOS_ROOT>" + x.group(3), block)  # 설치 때 바꾼 경로는 해시에서 뺌 (v1.2.2)
     print(f"version: {ver}")
-    print(f"sha256: {hashlib.sha256(block.encode('utf-8')).hexdigest()}")
+    print(f"sha256: {hashlib.sha256(norm.encode('utf-8')).hexdigest()}")
+    if scope is not None:
+        print(f"scope: {scope}" + ("   ⚠️ 자리표시자 그대로 → 실제 레포 루트로 바꾸세요 (규칙이 어느 레포에도 적용되지 않음)" if scope == "<REPOS_ROOT>" else ""))
     print(f"first_line: {block.splitlines()[0]}")
 
 
@@ -693,6 +700,7 @@ def cmd_context(args):
            "> 이 출력만 읽고 시작합니다. 과거 Task가 더 필요하면 INDEX에서 찾아 그 파일 하나만 여세요.", ""]
     out += git_block(root, now) + [""]
     out += ["## NOW.md", now.strip(), ""]
+    out += share_context(root, [task_id_of(t) for t in tasks if t["status"] in OPEN or (args.work and t["fm"].get("work") == args.work)])
     oi, od = open_items(wl)
     out += ["## 열린 결함 (DEFECTS.md open·fixing)"] + ([f"- {d['id']} {d['severity']} {d['status']} · {d['summary']}" + (f" · 수정 {d['fix_task']}" if d['fix_task'] else "") for d in od] or ["- (없음)"]) + [""]
     out += ["## 남은 구현 (IMPLEMENTATION.md MOCK·PARTIAL·STATIC·PLANNED) — 실제화하면 implements: 로 이어서"] + \
@@ -707,6 +715,213 @@ def cmd_context(args):
     if len(text) > args.max_chars:
         text = text[:args.max_chars] + f"\n\n…(잘림: {args.max_chars}자 제한. 필요한 파일만 따로 여세요)"
     print(text)
+
+
+# ---------------- share (AGS-SHARE, v1.2.2) ----------------
+SHARE_DIR = ".agentshare"
+SHARE_KINDS = ["PLAN", "WALK", "TURN", "REPORT", "NOTE"]
+RE_SHARE_NAME = re.compile(r"^(\d{4})_(" + "|".join(SHARE_KINDS) + r")_(" + CODE + r")_(T-\d{8}-\d{4}-" + CODE + r"(?:-[b-z])?|none)_v(\d+)(?:_[a-z0-9-]+)?\.md$")
+RE_SHARE_REF = re.compile(r"share\s*[:：]\s*#?\d{1,4}", re.I)
+SHARE_NONE = ("", "-", "—", "없음", "none")
+
+
+def _cell_map(text):
+    """문서 머리 표(첫 표)의 머리줄 → 첫 데이터 줄 값."""
+    rows = [l for l in text.replace("\r\n", "\n").splitlines()[:30] if l.strip().startswith("|")]
+    if len(rows) < 3:
+        return {}
+    h = [c.strip() for c in rows[0].strip().strip("|").split("|")]
+    v = [c.strip() for c in rows[2].strip().strip("|").split("|")]
+    return dict(zip(h, v))
+
+
+def _next_of(cells):
+    for k, v in cells.items():
+        if "다음 턴" in k:
+            m = re.search(r"\b(" + "|".join(AGENT_CODES) + r")\b", v.replace("*", ""))
+            return m.group(1) if m else ""
+    return ""
+
+
+def share_entries(d):
+    """공유 구역의 문서 목록. 규격 이름(NNNN_KIND_XX_Task_vN)과 본부 공유 폴더의 TURN·REPORT 이름을 함께 읽는다."""
+    out = []
+    if not os.path.isdir(d):
+        return out
+    legacy = []
+    for f in sorted(os.listdir(d)):
+        p = os.path.join(d, f)
+        if not f.endswith(".md") or f == "INDEX.md" or not os.path.isfile(p):
+            continue
+        text = read(p)
+        cells = _cell_map(text)
+        when = parse_time(next((v for k, v in cells.items() if "일시" in k), "")) or \
+            datetime.datetime.fromtimestamp(os.path.getmtime(p))
+        m = RE_SHARE_NAME.match(f)
+        if m:
+            out.append({"no": int(m.group(1)), "kind": m.group(2), "who": m.group(3),
+                        "task": "" if m.group(4) == "none" else m.group(4), "ver": int(m.group(5)),
+                        "next": _next_of(cells), "time": when, "file": f})
+            continue
+        t, rp = RE_TURN_NAME.match(f), RE_REPORT_NAME.match(f)
+        if t or rp:
+            legacy.append({"no": 0, "kind": "TURN" if t else "REPORT", "who": (t or rp).group(3 if t else 2),
+                           "task": ("TURN-" + t.group(1)) if t else "", "ver": int(t.group(2)) if t else 1,
+                           "next": _next_of(cells), "time": when, "file": f})
+    base = max([e["no"] for e in out] or [0])
+    for i, e in enumerate(sorted(legacy, key=lambda x: (x["time"], x["file"])), 1):
+        e["no"] = base + i  # 옛 이름 문서는 파일 이름을 바꾸지 않고 목차 번호만 매김
+    return sorted(out + legacy, key=lambda x: (x["time"], x["no"]))
+
+
+def share_state(entries, now=None):
+    now = now or now_local()
+    by_task = {}
+    for e in entries:
+        by_task.setdefault(e["task"] or "(Task 없음)", []).append(e)
+    pending = []
+    for task, es in by_task.items():
+        turns = [e for e in es if e["next"]]
+        if not turns:
+            continue
+        last = turns[-1]
+        later = [e for e in es if e["time"] > last["time"] and e["who"] == last["next"]]
+        if not later and last["next"] != "US":
+            pending.append({"task": task, "next": last["next"], "since": last["time"], "file": last["file"],
+                            "hours": (now - last["time"]).total_seconds() / 3600})
+    return by_task, pending
+
+
+def share_index_text(d, show_all=False):
+    es = share_entries(d)
+    by_task, pending = share_state(es)
+    now = now_local()
+    out = ["# INDEX — 공유 구역 목차 (AGS-SHARE)",
+           f"> `agentkit.py share index`가 만듭니다. 손으로 고치지 않습니다. 생성 {now.strftime('%Y-%m-%d %H:%M')} · 문서 {len(es)}개", "",
+           "## 현재 상태"]
+    if es:
+        last = es[-1]
+        out.append(f"- 마지막 작성: **{last['who']}** {last['time'].strftime('%m-%d %H:%M')} · #{last['no']:04d} {last['kind']} `{last['file']}`")
+    else:
+        out.append("- 마지막 작성: (문서 없음)")
+    if pending:
+        p = max(pending, key=lambda x: x["hours"])
+        out.append(f"- 다음 턴: " + " / ".join(f"**{x['next']}** ← {x['task']} ({x['hours']:.0f}시간 대기)" for x in sorted(pending, key=lambda x: -x["hours"])[:5]))
+    else:
+        out.append("- 다음 턴: 기다리는 턴 없음")
+    out += [f"- 열린 턴: {len(pending)}개", "",
+            "## Task별 최신 (한 Task 한 줄)", "| Task | 판 (종류별 최신) | 마지막 | 다음 턴 |", "|---|---|---|---|"]
+    for task, tes in sorted(by_task.items(), key=lambda kv: kv[1][-1]["time"], reverse=True):
+        kinds = []
+        for k in SHARE_KINDS:
+            ks = [e for e in tes if e["kind"] == k]
+            if ks:
+                kinds.append(f"{k} v{ks[-1]['ver']} (#{ks[-1]['no']:04d})")
+        lt = tes[-1]
+        nx = next((x["next"] for x in pending if x["task"] == task), "—")
+        out.append(f"| {task} | {' · '.join(kinds)} | {lt['who']} {lt['time'].strftime('%m-%d %H:%M')} | {nx} |")
+    if show_all:
+        out += ["", "## 전체 이력 (오래된 것부터)", "| # | 종류 | 작성 | 일시 | Task | 판 | 다음 턴 | 파일 |", "|---|---|---|---|---|---|---|---|"]
+        out += [f"| {e['no']:04d} | {e['kind']} | {e['who']} | {e['time'].strftime('%Y-%m-%d %H:%M')} | {e['task'] or '—'} | v{e['ver']} | {e['next'] or '—'} | `{e['file']}` |" for e in es]
+    return "\n".join(out) + "\n", es, pending
+
+
+SHARE_TPL = """# {kind} #{no:04d} · {task} v{ver}
+
+| 쓴쪽 | 일시 (OS 시계, KST) | 종류 | Task | 판 | 다음 턴 |
+|---|---|---|---|---|---|
+| {who} | {now} | {kind} | {task} | v{ver} | {next} |
+
+> AGS-SHARE 문서 (gitignore, 이 PC에만 있음). 고치지 않고 새 판을 만듭니다. 결론·검증 출력은 Task 파일에 옮기고 `share: #{no:04d}`로 적습니다.
+
+"""
+
+
+def _share_dir(args):
+    return os.path.abspath(args.dir) if getattr(args, "dir", None) else os.path.join(repo_root(), SHARE_DIR)
+
+
+def _share_add(d, kind, who, task, nxt, body, slug=""):
+    if kind not in SHARE_KINDS:
+        print(f"종류는 {', '.join(SHARE_KINDS)} 중 하나"); sys.exit(2)
+    if who not in AGENT_CODES or (nxt and nxt not in AGENT_CODES):
+        print(f"등록되지 않은 에이전트 코드. 등록: {', '.join(AGENT_CODES)}"); sys.exit(2)
+    if task and not RE_ID.match(task):
+        print(f"Task ID 형식이 아님: {task}"); sys.exit(2)
+    os.makedirs(d, exist_ok=True)
+    es = share_entries(d)
+    no = max([e["no"] for e in es if RE_SHARE_NAME.match(e["file"])] or [0]) + 1
+    ver = 1 + max([e["ver"] for e in es if e["task"] == task and e["kind"] == kind and RE_SHARE_NAME.match(e["file"])] or [0])
+    name = f"{no:04d}_{kind}_{who}_{task or 'none'}_v{ver}" + (f"_{slug}" if slug else "") + ".md"
+    p = os.path.join(d, name)
+    with open(p, "w", encoding="utf-8", newline="\n") as f:
+        f.write(SHARE_TPL.format(kind=kind, no=no, task=task or "(Task 없음)", ver=ver, who=who,
+                                 now=now_local().strftime("%Y-%m-%d %H:%M"), next=nxt or "—") + body)
+    return p
+
+
+def _share_write_index(d, show_all=True):
+    os.makedirs(d, exist_ok=True)
+    text, es, pending = share_index_text(d, show_all)
+    with open(os.path.join(d, "INDEX.md"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(text)
+    return text, es, pending
+
+
+def cmd_share(args):
+    d = _share_dir(args)
+    if args.share_cmd == "new":
+        p = _share_add(d, args.kind, args.who, args.task or "", args.next or "", "## 내용\n\n", args.slug or "")
+        _share_write_index(d)
+        print(p)
+    elif args.share_cmd == "import":
+        made = []
+        for src in args.files:
+            body = read(src).replace("\r\n", "\n")
+            if not body:
+                print(f"읽을 수 없거나 빈 파일: {src}"); continue
+            note = f"## 원본: `{os.path.basename(src)}` (가져온 시각 {now_local().strftime('%H:%M')})\n\n"
+            made.append(_share_add(d, args.kind, args.who, args.task or "", args.next or "", note + body, args.slug or ""))
+        _share_write_index(d)
+        print("\n".join(made) if made else "가져온 문서 없음")
+    elif args.share_cmd == "index":
+        text, _, _ = _share_write_index(d, show_all=True)
+        cut = text.split("\n## 전체 이력")[0] if not args.all else text
+        print(cut)
+    elif args.share_cmd == "fleet":
+        root = os.path.abspath(args.root)
+        print(f"# 공유 구역 현황 (fleet) — {now_local().strftime('%Y-%m-%d %H:%M')} · 읽기만")
+        print("| 레포 | 문서 | 마지막 작성 | 다음 턴 (대기) | 열린 턴 |")
+        print("|---|---|---|---|---|")
+        for gitdir in sorted(glob.glob(os.path.join(root, "**", ".git"), recursive=True)):
+            repo = os.path.dirname(gitdir)
+            rel = os.path.relpath(repo, root).replace("\\", "/")
+            if rel.count("/") > 4 or any(part.startswith(".") and part not in (".",) for part in rel.split("/")):
+                continue
+            sd = os.path.join(repo, SHARE_DIR)
+            if not os.path.isdir(sd):
+                if args.all:
+                    print(f"| {rel} | (공유 구역 없음) | — | — | — |")
+                continue
+            es = share_entries(sd)
+            _, pending = share_state(es)
+            last = f"{es[-1]['who']} {es[-1]['time'].strftime('%m-%d %H:%M')}" if es else "—"
+            nx = " / ".join(f"{x['next']} ({x['hours']:.0f}h)" for x in sorted(pending, key=lambda x: -x["hours"])[:3]) or "—"
+            print(f"| {rel} | {len(es)} | {last} | {nx} | {len(pending)} |")
+
+
+def share_context(root, focus_ids):
+    d = os.path.join(root, SHARE_DIR)
+    if not os.path.isdir(d):
+        return ["## 공유 구역 (AGS-SHARE)", f"- `{SHARE_DIR}/` 없음 → install_agentkit.ps1 로 만듦 (C33)", ""]
+    text, es, pending = share_index_text(d)
+    st = text.split("## 현재 상태\n")[1].split("\n\n")[0].splitlines()
+    out = ["## 공유 구역 (AGS-SHARE) — 현재 상태"] + st
+    rows = [l for l in text.splitlines() if l.startswith("| T-") and any(i in l for i in focus_ids)]
+    if rows:
+        out += ["- 이번 Task 최신판:"] + [f"  {l}" for l in rows]
+    out.append(f"- 목차: `{SHARE_DIR}/INDEX.md` (전체는 `agentkit.py share index --all`)")
+    return out + [""]
 
 
 # ---------------- check ----------------
@@ -1146,6 +1361,35 @@ def cmd_check(args):
             lv30 = bump("warn")
     res.append(r("C30", lv30, f"운영 확인·실측 범위 {len(c30)}건 (배포·인프라 판단은 운영 대상에서 확인한 것만 '실측')" + ("" if v12 else " (v1.2 도입 전: 건너뜀)"), c30))
 
+    # C31~C33 공유 구역 (v1.2.2)
+    sd = os.path.join(root, SHARE_DIR)
+    ign = git_ok(root, "check-ignore", "-q", SHARE_DIR + "/x.md")
+    tracked_share = [f for f in git(root, "ls-files", SHARE_DIR).splitlines() if f.strip()]
+    if tracked_share:
+        res.append(r("C33", "fail", f"공유 구역 파일이 git에 올라가 있음 {len(tracked_share)}개 → `git rm --cached -r {SHARE_DIR}` 후 .gitignore", tracked_share))
+    elif not ign:
+        res.append(r("C33", "fail" if os.path.isdir(sd) else "warn", f"`{SHARE_DIR}/`가 .gitignore에 없음" + ("" if os.path.isdir(sd) else " (폴더도 없음 → install_agentkit.ps1)")))
+    else:
+        res.append(r("C33", "pass", f"`{SHARE_DIR}/` gitignore됨"))
+    if os.path.isdir(sd):
+        ses = share_entries(sd)
+        _, spend = share_state(ses)
+        first = min([e["time"] for e in ses] or [None]) if ses else None
+        c31 = []
+        for t in tasks:
+            stt = parse_time(t["fm"].get("started"))
+            if t["status"] != "🟢" or not (first and stt and stt >= first.replace(second=0)):
+                continue
+            tid = task_id_of(t)
+            if not any(e["task"] == tid and e["kind"] == "WALK" for e in ses) and not RE_SHARE_REF.search(t["sec"].get(5, "")):
+                c31.append(f"{tid}: 공유 구역에 WALK 없음, §5에 `share: #번호`도 없음")
+        res.append(r("C31", "warn" if c31 else "pass", f"🟢인데 공유 구역 워크스루 연결 없음 {len(c31)}건", c31))
+        c32 = [f"{x['task']}: 다음 턴 {x['next']} {x['hours']:.0f}시간 대기 ({x['file']})" for x in spend if x["hours"] > 24]
+        res.append(r("C32", "warn" if c32 else "pass", f"24시간 넘게 기다리는 턴 {len(c32)}건", c32))
+    else:
+        res.append(r("C31", "skip", f"`{SHARE_DIR}/` 없음"))
+        res.append(r("C32", "skip", f"`{SHARE_DIR}/` 없음"))
+
     recent = []
     for line in index.splitlines():
         if line.startswith("|") and RE_ID_ANY.search(line):
@@ -1208,8 +1452,15 @@ def cmd_doctor(args):
     _, has_mode = parse_locks(read(os.path.join(root, "worklog", "NOW.md")))
     add(has_mode, "NOW.md 잠금 표에 '모드' 열 (v1.2)", "templates/NOW.md처럼 '모드' 열 추가", soft=True)
     gi = read(os.path.join(root, ".gitignore"))
-    for line in ("worklog/.agentkit-report.json", ".wt/"):
+    for line in ("worklog/.agentkit-report.json", ".wt/", SHARE_DIR + "/"):
         add(line in gi, f".gitignore에 {line}", "install_agentkit.ps1 (자동 추가)")
+    add(os.path.isdir(os.path.join(root, SHARE_DIR)), f"공유 구역 {SHARE_DIR}/ 있음 (v1.2.2)", "install_agentkit.ps1 또는 agentkit.py share index", soft=True)
+    for gr in (os.path.expanduser("~/.claude/CLAUDE.md"), os.path.expanduser("~/.gemini/GEMINI.md")):
+        gt = read(gr)
+        if "anti-gc-sync-pub" in gt:
+            sm = RE_SCOPE.search(gt)
+            add(bool(sm) and sm.group(2) != "<REPOS_ROOT>", f"글로벌 룰 적용 범위가 실제 경로 ({os.path.basename(gr)})",
+                "적용 범위 줄의 `<REPOS_ROOT>`를 레포 루트로 바꿈 (안 바꾸면 규칙이 적용되지 않음)")
     wf = read(os.path.join(root, ".github", "workflows", "agent-contract.yml"))
     add(bool(wf), "CI: .github/workflows/agent-contract.yml 있음", "install_agentkit.ps1 (CI 기본 포함)")
     add(bool(wf) and "continue-on-error: false" in wf, "CI: 🔴면 실패하도록 설정됨 (필수 검사)", "workflow의 continue-on-error를 false로")
@@ -1245,6 +1496,15 @@ def main():
     p = sp.add_parser("terms"); p.add_argument("file"); p.set_defaults(fn=cmd_terms)
     p = sp.add_parser("collab"); p.add_argument("dir"); p.add_argument("--forbid", action="append", help="공유 문서에 있으면 안 되는 문자열 (여러 번)")
     p.add_argument("--strict", action="store_true"); p.add_argument("--no-ledger", action="store_true"); p.set_defaults(fn=cmd_collab)
+    p = sp.add_parser("share"); ssp = p.add_subparsers(dest="share_cmd", required=True)
+    for nm in ("new", "import"):
+        q = ssp.add_parser(nm); q.add_argument("kind", choices=SHARE_KINDS); q.add_argument("who")
+        q.add_argument("--task"); q.add_argument("--next", help="다음 턴 에이전트 코드"); q.add_argument("--slug"); q.add_argument("--dir")
+        if nm == "import":
+            q.add_argument("files", nargs="+")
+        q.set_defaults(fn=cmd_share)
+    q = ssp.add_parser("index"); q.add_argument("--dir"); q.add_argument("--all", action="store_true"); q.set_defaults(fn=cmd_share)
+    q = ssp.add_parser("fleet"); q.add_argument("root"); q.add_argument("--all", action="store_true"); q.set_defaults(fn=cmd_share)
     p = sp.add_parser("doctor"); p.add_argument("--strict", action="store_true"); p.set_defaults(fn=cmd_doctor)
     p = sp.add_parser("version"); p.set_defaults(fn=lambda a: print(f"agentkit {KIT_VERSION} ({SPEC})"))
     a = ap.parse_args()

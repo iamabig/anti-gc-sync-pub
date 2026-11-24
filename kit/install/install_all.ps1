@@ -1,3 +1,5 @@
+﻿#Requires -Version 7.0
+# PowerShell 7(pwsh)로 실행하세요. Windows PowerShell 5.1(powershell.exe)은 지원하지 않습니다.
 <#
 .SYNOPSIS
   AGS-KIT 일괄 설치·갱신 — 등록부(레포 목록 표)에 있는 레포 전부 (사용자가 실행)
@@ -52,7 +54,8 @@ foreach ($g in ($targets | Group-Object Account)) {
     if (-not (Test-Path (Join-Path $t.Path '.git'))) { $skip += $t.Rel; Write-Host "⚪ 건너뜀 (git 레포 아님): $($t.Rel)"; continue }
     Write-Host "--- $($t.Rel)"
     try {
-      $p = @{ Repo = $t.Path; CIWarnOnly = $CIWarnOnly; NoHook = $NoHook; WhatIf = $WhatIfPreference }
+      # -Init: worklog/가 없으면 양식을 만든다. 없으면 check C0 🔴 → 커밋 훅이 모든 커밋을 막음 (v1.2.2)
+      $p = @{ Repo = $t.Path; CIWarnOnly = $CIWarnOnly; NoHook = $NoHook; Init = $true; WhatIf = $WhatIfPreference }
       & $one @p
       $done++
     } catch { $fail += "$($t.Rel): $($_.Exception.Message)"; Write-Host "🔴 실패: $($_.Exception.Message)" }
