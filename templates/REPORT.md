@@ -25,3 +25,5 @@
 - 실측:
 - 문서:
 - 추측:
+- 사전 점검: `agentkit.py health --collab <폴더>` → <점수>점 (지문 <12자리>)
+- 사후 점검: `agentkit.py health --collab <폴더>` → <점수>점 (지문 <12자리>)

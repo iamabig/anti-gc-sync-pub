@@ -7,21 +7,23 @@
   context [--n 5] [--work KEY] [--max-chars 12000]
                                컨텍스트 팩 출력 (새 세션은 이것만 읽는다)
   check [--json PATH] [--summary PATH] [--strict] [--since 50] [--hook --msg FILE] [--ahead-max 3]
-                               계약 점검 C1~C33. --strict면 🔴가 있을 때 종료코드 1
+                               계약 점검 C1~C35. --strict면 🔴가 있을 때 종료코드 1
   hash <파일>                  글로벌 룰 블록의 버전과 SHA-256 (C8). 블록이 없으면 파일 전체 SHA-256
   terms <TERMS.md>             이 키의 SSOT 상수와 TERMS.md 비교 (다르면 종료코드 1)
   collab <폴더> [--forbid 문자열]… [--strict]
                                에이전트 간 TURN·REPORT 문서 점검 R1~R8 (머리 표, 근거, 단정, 금지 문자열, 서명 위치, Append-Only, 턴 순서, 이름)
   share new|import|index|fleet  레포 안 공유 구역(.agentshare/, gitignore) 번호 문서·자동 목차 (v1.2.2)
+  health [--collab 폴더] [--upto 파일] [--min 80] [--strict]
+                               헬스 체크 점수(100점)·합격 판정·지문. 사전·사후 점검 줄에 붙임 (v1.2.3)
   doctor [--strict]            설치 상태 점검
   version
 
 표준 라이브러리만 사용합니다 (node 불필요, 메모리 부담 최소).
 """
-import sys, os, re, json, hashlib, subprocess, datetime, glob, argparse
+import sys, os, re, json, hashlib, subprocess, datetime, glob, argparse, tempfile
 
-KIT_VERSION = "1.2.2"
-SPEC = "anti-gc-sync-pub v1.2.2"
+KIT_VERSION = "1.2.3"
+SPEC = "anti-gc-sync-pub v1.2.3"
 
 # ---- SSOT 상수 (TERMS.md와 같아야 함. `agentkit.py terms TERMS.md`로 비교) ----
 TERMS_COMPONENTS = ["AGS", "AGS-SPEC", "AGS-HQ-<코드>", "AGS-RS", "AGS-GR-<코드>", "AGS-KIT", "AGS-CI", "AGS-WL", "AGS-SHARE"]
@@ -454,7 +456,7 @@ def cmd_init(args):
     repo = os.path.basename(root)
     made = []
     for name, tpl in (("NOW.md", TPL_NOW), ("INDEX.md", TPL_INDEX), ("BADCASES.md", TPL_BAD),
-                      ("IMPLEMENTATION.md", TPL_IMPL), ("DEFECTS.md", TPL_DEF)):
+                      ("IMPLEMENTATION.md", TPL_IMPL), ("DEFECTS.md", TPL_DEF), ("NAMING.md", TPL_NAMING)):
         p = os.path.join(wl, name)
         if not os.path.exists(p):
             with open(p, "w", encoding="utf-8", newline="\n") as f:
@@ -578,10 +580,20 @@ def head_table(text):
     return dict(zip(h, v))
 
 
-def cmd_collab(args):
-    d = args.dir
-    files = sorted(f for f in os.listdir(d) if f.endswith(".md") and not f.startswith("_"))
+def _when(head):
+    return next((v for k, v in head.items() if "일시" in k), "")
+
+
+def collab_results(d, forbid, use_ledger=True, upto=None):
+    files = sorted(f for f in os.listdir(d) if f.endswith(".md") and not f.startswith("_") and f not in ("INDEX.md", "NAMING.md"))
     res = []
+    since = parse_time(HEALTH_SINCE)
+    naming = load_naming(d)
+    if upto:
+        lim = parse_time(_when(head_table(read(os.path.join(d, upto))))) if os.path.exists(os.path.join(d, upto)) else None
+        if not lim:
+            print(f"--upto 파일을 찾지 못했거나 머리 표에 일시가 없음: {upto}"); sys.exit(2)
+        files = [f for f in files if (parse_time(_when(head_table(read(os.path.join(d, f))))) or lim) <= lim]
     ledger_p = os.path.join(d, ".collab-ledger.json")
     try:
         ledger = json.load(open(ledger_p, encoding="utf-8"))
@@ -613,9 +625,16 @@ def cmd_collab(args):
                 res.append(r("R3", "warn", f"{f}: 근거 없는 단정 → {line}"))
             if kind == "REPORT" and re.search(r"☑\s*서명|서명\s*(완료|함)", text):
                 res.append(r("R5", "fail", f"{f}: 보고서에 서명 표기 → 서명은 TURN 문서의 서명 표에서만"))
+            when = parse_time(_when(head))
+            if when and since and when >= since:  # v1.2.3: 호칭(R9)·사전사후 점검(R10)
+                for h in naming_violations(text, naming):
+                    res.append(r("R9", "warn", f"{f}: 호칭 {h}"))
+                miss = prepost_missing(text)
+                if miss:
+                    res.append(r("R10", "warn", f"{f}: {'·'.join(miss)} 점검 줄 없음 (`사전 점검: agentkit.py health --collab … → N점`)"))
             if mt:
                 turns.setdefault(mt.group(1), []).append((mt.group(2), code, head.get("다음 턴", "") or next((v for k, v in head.items() if "다음 턴" in k), ""), f))
-        for pat in args.forbid or []:
+        for pat in forbid:
             if re.search(re.escape(pat), text, re.I):
                 res.append(r("R4", "fail", f"{f}: 공유 문서에 쓰면 안 되는 문자열 '{pat}'"))
         lines = [hashlib.sha1(l.strip().encode("utf-8")).hexdigest()[:12] for l in text.splitlines() if l.strip()]
@@ -632,15 +651,23 @@ def cmd_collab(args):
         for (n1, c1, nxt, f1), (n2, c2, _, f2) in zip(lst, lst[1:]):
             if nxt and c2 not in nxt and "사용자" not in nxt:
                 res.append(r("R7", "warn", f"TURN-{topic}: {f1}의 다음 턴 '{nxt}'인데 {f2}는 {c2}가 씀"))
+    if use_ledger:
+        with open(ledger_p, "w", encoding="utf-8") as fp:
+            json.dump(new_ledger, fp, ensure_ascii=False)
+    return res, len(files)
+
+
+def cmd_collab(args):
+    d = args.dir
+    res, nfiles = collab_results(d, args.forbid or [], use_ledger=not args.no_ledger)
+    ledger_p = os.path.join(d, ".collab-ledger.json")
     icon = {"pass": "🟢", "warn": "🟡", "fail": "🔴", "skip": "⚪", "info": "🔵"}
-    print(f"agentkit {KIT_VERSION} collab · {os.path.basename(os.path.abspath(d))} · 문서 {len(files)}개")
+    print(f"agentkit {KIT_VERSION} collab · {os.path.basename(os.path.abspath(d))} · 문서 {nfiles}개")
     for x in res:
         print(f"{icon[x['level']]} {x['id']:<3} {x['msg']}")
     fails = sum(1 for x in res if x["level"] == "fail")
     print(f"요약: 🔴{fails} 🟡{sum(1 for x in res if x['level'] == 'warn')}" + (" · 문제 없음" if not res else ""))
     if not args.no_ledger:
-        with open(ledger_p, "w", encoding="utf-8") as fp:
-            json.dump(new_ledger, fp, ensure_ascii=False)
         print(f"장부 갱신: {os.path.basename(ledger_p)} (다음 점검에서 지워진 줄을 찾는 기준)")
     if args.strict and fails:
         sys.exit(1)
@@ -715,6 +742,150 @@ def cmd_context(args):
     if len(text) > args.max_chars:
         text = text[:args.max_chars] + f"\n\n…(잘림: {args.max_chars}자 제한. 필요한 파일만 따로 여세요)"
     print(text)
+
+
+# ---------------- naming · health (v1.2.3) ----------------
+NAMING_PROFILES = {
+    "hq-nickname": {"label": "A (권장) 본부·세션 닉네임",
+                    "names": ["클로드HQ", "안티HQ", "클로드 세션", "안티 세션", "사용자"]},
+    "product-name": {"label": "B 제품 이름",
+                     "names": ["Claude 본부", "Antigravity 본부", "Claude 세션", "Antigravity 세션", "사용자"]},
+    "custom": {"label": "C 레포가 정함 (NAMING.md 표)", "names": []},
+}
+NAMING_DEFAULT = "hq-nickname"
+HEALTH_SINCE = "2026-11-24 19:00"  # 공통 공유 폴더(TURN·REPORT)에서 R9·R10을 보기 시작한 시각
+RE_PREPOST = re.compile(r"(사전|사후)\s*점검\s*[:：][^\n]*?(\d{1,3})\s*(?:점|/\s*100)")
+RE_PROFILE = re.compile(r"^\s*-?\s*profile\s*[:：]\s*`?([a-z][a-z-]+)`?", re.M)
+TPL_NAMING = """# NAMING — {repo} 호칭 (CONTRACT §22)
+
+> 대화·보고서·Task 본문에서 에이전트를 부르는 이름입니다. 기록 코드(`CL`·`AG`)는 Task ID·파일 이름·표의 코드 칸·백틱 안에서만 씁니다.
+> 아래 셋 중 하나를 고릅니다. 바꾸려면 `profile:` 한 줄만 고칩니다. 점검: `agentkit.py check` C34, `agentkit.py health`.
+
+- profile: `hq-nickname`
+
+| 방식 | profile | 부르는 이름 | 언제 |
+|---|---|---|---|
+| A (권장) | `hq-nickname` | 클로드HQ · 안티HQ · 클로드 세션 · 안티 세션 · 사용자 | 기본. 레포 안의 다른 "AG"·"CL"과 섞이지 않음 |
+| B | `product-name` | Claude 본부 · Antigravity 본부 · Claude 세션 · Antigravity 세션 · 사용자 | 외부에 보여 줄 문서가 많을 때 |
+| C | `custom` | 아래 표에 레포가 정함 | 팀 고유 이름이 이미 있을 때 |
+
+## 이름 (C를 고르면 채움. A·B에서 금지어를 더할 때도 씀)
+| 부르는 이름 | 대상 | 쓰지 말 것 |
+|---|---|---|
+"""
+
+
+def load_naming(base):
+    """base 폴더(레포 루트면 worklog/NAMING.md, 아니면 base/NAMING.md)의 호칭 설정."""
+    p = os.path.join(base, "worklog", "NAMING.md")
+    if not os.path.exists(p):
+        p = os.path.join(base, "NAMING.md")
+    text = read(p)
+    m = RE_PROFILE.search(text)
+    prof = m.group(1) if m and m.group(1) in NAMING_PROFILES else NAMING_DEFAULT
+    names, forbid = list(NAMING_PROFILES[prof]["names"]), []
+    sec = text.split("## 이름", 1)[1] if "## 이름" in text else ""
+    for row in table_rows(sec):
+        cells = [c.strip() for c in row]
+        if len(cells) >= 3 and cells[0] and not cells[0].startswith("부르는"):
+            if prof == "custom":
+                names.append(cells[0].strip("`"))
+            forbid += [w.strip(" `'\"") for w in re.split(r"[,·]", cells[2]) if w.strip(" `'\"-—")]
+    return {"profile": prof, "label": NAMING_PROFILES[prof]["label"], "names": names, "forbid": forbid,
+            "file": p if text else None}
+
+
+def _prose_lines(text):
+    """호칭 점검 대상 줄: 머리말·코드 블록·백틱·링크 주소·코드만 있는 표 칸을 뺀 본문."""
+    t = text.replace("\r\n", "\n")
+    if t.startswith("---\n"):
+        end = t.find("\n---", 4)
+        if end > 0:
+            t = "\n" * t[:end + 4].count("\n") + t[end + 4:]
+    out, fence = [], False
+    codes = [c for c in AGENT_CODES]
+    cell_code = re.compile(r"^\s*\**\s*(" + "|".join(codes) + r")\s*\**\s*$")
+    for n, line in enumerate(t.split("\n"), 1):
+        if line.lstrip().startswith("```"):
+            fence = not fence; continue
+        if fence:
+            continue
+        s = re.sub(r"`[^`]*`", " ", line)
+        s = re.sub(r"\]\([^)]*\)", "]", s)
+        s = re.sub(r"https?://\S+", " ", s)
+        if s.lstrip().startswith("|"):
+            s = "|".join("" if cell_code.match(c) else c for c in s.split("|"))
+        out.append((n, s))
+    return out
+
+
+def naming_violations(text, naming):
+    codes = [c for c in AGENT_CODES if c != "US"]  # US는 영어 낱말과 겹쳐서 제외
+    bare = re.compile(r"(?<![A-Za-z0-9_\-/.(])(" + "|".join(codes) + r")(?![A-Za-z0-9_\-)])")
+    hits = []
+    for n, s in _prose_lines(text):
+        for m in bare.finditer(s):
+            hits.append(f"L{n}: 단독 코드 '{m.group(1)}' → 부르는 이름({' · '.join(naming['names'][:4]) or 'NAMING.md 표'})으로, 코드는 백틱 안에: {s.strip()[:60]}")
+        for w in naming["forbid"]:
+            if w and w in s:
+                hits.append(f"L{n}: 쓰지 말 것 '{w}': {s.strip()[:60]}")
+    return hits
+
+
+def prepost_missing(text):
+    got = {m.group(1) for m in RE_PREPOST.finditer(text)}
+    return [k for k in ("사전", "사후") if k not in got]
+
+
+def naming_adopt_time(root):
+    ts = git(root, "log", "--format=%ct", "--diff-filter=A", "--", "worklog/NAMING.md").split()
+    return datetime.datetime.fromtimestamp(int(ts[-1])) if ts else None
+
+
+def _health_score(res, detail_ids):
+    fail_n = sum(1 for x in res if x["level"] == "fail")
+    warn_n = sum(1 for x in res if x["level"] == "warn" and x["id"] not in detail_ids)
+    naming_n = sum(max(len(x["items"]), 1) for x in res if x["level"] == "warn" and x["id"] in ("C34", "R9"))
+    pp_n = sum(max(len(x["items"]), 1) for x in res if x["level"] == "warn" and x["id"] in ("C35", "R10"))
+    score = max(0, 100 - 10 * fail_n - 2 * warn_n - naming_n - 2 * pp_n)
+    return score, fail_n, warn_n, naming_n, pp_n
+
+
+def cmd_health(args):
+    icon = {"pass": "🟢", "warn": "🟡", "fail": "🔴", "skip": "⚪", "info": "🔵"}
+    if args.collab:
+        d = os.path.abspath(args.collab)
+        res, nfiles = collab_results(d, args.forbid or [], use_ledger=False, upto=args.upto)
+        target, naming = f"공유 폴더 {os.path.basename(d)} (문서 {nfiles}개" + (f", ~{args.upto}" if args.upto else "") + ")", load_naming(d)
+        keyf = lambda x: (x["id"], x["level"], x["msg"].split(":")[0])
+    else:
+        root = repo_root()
+        fd, tmp = tempfile.mkstemp(prefix="agentkit-health-", suffix=".json"); os.close(fd)  # 레포 안에 쓰지 않음
+        subprocess.run([sys.executable, os.path.abspath(__file__), "check", "--json", tmp], cwd=root,
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+        try:
+            data = json.load(open(tmp, encoding="utf-8"))
+        finally:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        res, target, naming = data["results"], f"레포 {os.path.basename(root)}", load_naming(root)
+        keyf = lambda x: (x["id"], x["level"], str(len(x["items"])))
+    score, fail_n, warn_n, naming_n, pp_n = _health_score(res, ("C34", "C35", "R9", "R10"))
+    ok = fail_n == 0 and score >= args.min
+    fp = hashlib.sha256(json.dumps(sorted(keyf(x) for x in res if x["level"] in ("fail", "warn")), ensure_ascii=False).encode("utf-8")).hexdigest()[:12]
+    print(f"AGS health · {target} · agentkit {KIT_VERSION} · 호칭 {naming['profile']} ({naming['label']})")
+    print(f"점수 {score}/100 · {'🟢 합격' if ok else '🔴 불합격'} (기준: 🔴 0개 그리고 {args.min}점 이상) · 지문 {fp}")
+    print(f"- 🔴 {fail_n}개 (-10씩) · 🟡 {warn_n}개 (-2씩) · 호칭 위반 {naming_n}건 (-1씩) · 사전·사후 점검 누락 {pp_n}건 (-2씩)")
+    for x in res:
+        if x["level"] in ("fail", "warn"):
+            print(f"  {icon[x['level']]} {x['id']:<4} {x['msg']}")
+            for it in x.get("items", [])[:5]:
+                print(f"        - {it}")
+    print(f"➡️ 기록에 붙일 줄: `사전 점검: agentkit.py health → {score}점 (지문 {fp})` 또는 `사후 점검: … → {score}점 (지문 {fp})`")
+    if args.strict and not ok:
+        sys.exit(1)
 
 
 # ---------------- share (AGS-SHARE, v1.2.2) ----------------
@@ -1390,6 +1561,31 @@ def cmd_check(args):
         res.append(r("C31", "skip", f"`{SHARE_DIR}/` 없음"))
         res.append(r("C32", "skip", f"`{SHARE_DIR}/` 없음"))
 
+    # C34 호칭 · C35 사전·사후 점검 기록 (v1.2.3, worklog/NAMING.md 첫 커밋 뒤 시작한 Task)
+    nadopt = naming_adopt_time(root)
+    if not nadopt:
+        res.append(r("C34", "skip", "worklog/NAMING.md 아직 커밋 안 됨 → `agentkit.py init` 후 커밋하면 점검 시작"))
+        res.append(r("C35", "skip", "worklog/NAMING.md 아직 커밋 안 됨"))
+    else:
+        nm = load_naming(root)
+        c34, c35 = [], []
+        for t in tasks:
+            stt = parse_time(t["fm"].get("started"))
+            if not (stt and stt >= nadopt.replace(second=0)):
+                continue
+            tid, txt = task_id_of(t), read(t["path"])
+            c34 += [f"{tid} {h}" for h in naming_violations(txt, nm)]
+            if t["status"] == "🟢":
+                miss = prepost_missing(txt)
+                if miss:
+                    c35.append(f"{tid}: {'·'.join(miss)} 점검 줄 없음 (`사전 점검: agentkit.py health → N점`)")
+        sd2 = os.path.join(root, SHARE_DIR)
+        for e in share_entries(sd2) if os.path.isdir(sd2) else []:
+            if e["time"] >= nadopt and RE_SHARE_NAME.match(e["file"]):
+                c34 += [f"{SHARE_DIR}/{e['file']} {h}" for h in naming_violations(read(os.path.join(sd2, e["file"])), nm)]
+        res.append(r("C34", "warn" if c34 else "pass", f"호칭 위반 {len(c34)}건 (호칭 {nm['profile']}: {' · '.join(nm['names'][:4])})", c34))
+        res.append(r("C35", "warn" if c35 else "pass", f"🟢인데 사전·사후 점검(health 점수) 줄 없는 Task {len(c35)}건", c35))
+
     recent = []
     for line in index.splitlines():
         if line.startswith("|") and RE_ID_ANY.search(line):
@@ -1449,6 +1645,8 @@ def cmd_doctor(args):
     add(os.path.isdir(os.path.join(root, "worklog")), "worklog/ 있음", "agentkit.py init")
     for f in ("NOW.md", "INDEX.md", "BADCASES.md", "IMPLEMENTATION.md", "DEFECTS.md"):
         add(os.path.exists(os.path.join(root, "worklog", f)), f"worklog/{f} 있음", "agentkit.py init (있는 파일은 안 건드림)")
+    nmf = load_naming(root)
+    add(bool(nmf["file"]), f"worklog/NAMING.md 있음 (호칭 {nmf['profile']}, v1.2.3)", "agentkit.py init", soft=True)
     _, has_mode = parse_locks(read(os.path.join(root, "worklog", "NOW.md")))
     add(has_mode, "NOW.md 잠금 표에 '모드' 열 (v1.2)", "templates/NOW.md처럼 '모드' 열 추가", soft=True)
     gi = read(os.path.join(root, ".gitignore"))
@@ -1505,6 +1703,9 @@ def main():
         q.set_defaults(fn=cmd_share)
     q = ssp.add_parser("index"); q.add_argument("--dir"); q.add_argument("--all", action="store_true"); q.set_defaults(fn=cmd_share)
     q = ssp.add_parser("fleet"); q.add_argument("root"); q.add_argument("--all", action="store_true"); q.set_defaults(fn=cmd_share)
+    p = sp.add_parser("health"); p.add_argument("--collab", help="TURN·REPORT 공유 폴더를 점검 (없으면 이 레포)")
+    p.add_argument("--upto", help="--collab: 이 파일의 일시까지만 (두 HQ가 같은 범위로 채점)"); p.add_argument("--forbid", action="append")
+    p.add_argument("--min", type=int, default=80); p.add_argument("--strict", action="store_true"); p.set_defaults(fn=cmd_health)
     p = sp.add_parser("doctor"); p.add_argument("--strict", action="store_true"); p.set_defaults(fn=cmd_doctor)
     p = sp.add_parser("version"); p.set_defaults(fn=lambda a: print(f"agentkit {KIT_VERSION} ({SPEC})"))
     a = ap.parse_args()

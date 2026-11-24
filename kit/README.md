@@ -2,8 +2,8 @@
 
 | 항목 | 값 |
 |---|---|
-| 키 버전 | 1.2.2 |
-| 맞춘 규격 | `anti-gc-sync-pub` v1.2.2 (이 저장소의 태그가 원본) |
+| 키 버전 | 1.2.3 |
+| 맞춘 규격 | `anti-gc-sync-pub` v1.2.3 (이 저장소의 태그가 원본) |
 | 실행 환경 | Python 3.9 이상, **표준 라이브러리만** (설치할 것 없음, node 불필요) |
 | 배포 | **사용자가** 각 레포에 설치합니다. 에이전트 본부(AGS-HQ)는 키를 만들고 관리만 합니다 |
 
@@ -11,7 +11,7 @@
 
 1. **컨텍스트 통제** (`context`): 새 세션이 읽을 내용을 정해진 크기의 팩 하나로 뽑습니다. 순서: **git 상태 → NOW → 열린 결함·남은 구현 → 진행 중 Task → 배드 케이스 → INDEX**.
 2. **번호 발급** (`new-id`): 겹치지 않는 Task ID(등록된 에이전트 코드), `IMP-`·`DEF-` 번호.
-3. **검수** (`check`): 계약 C1~C33. 신호등 출력, 대시보드·CI용 JSON(`agentkit-check/2`), CI Job Summary(마크다운).
+3. **검수** (`check`): 계약 C1~C35. 신호등 출력, 대시보드·CI용 JSON(`agentkit-check/2`), CI Job Summary(마크다운).
 4. **시작 도우미** (`init`): worklog 양식 5종(NOW, INDEX, BADCASES, IMPLEMENTATION, DEFECTS). 있는 파일은 건드리지 않습니다.
 5. **자기 보고** (`hash`), **용어 비교** (`terms TERMS.md`), **설치 점검** (`doctor`).
 6. **에이전트 간 문서 점검** (`collab <공통 구역 폴더> --forbid <쓰면 안 되는 문자열>`): TURN·REPORT의 머리 표, 근거 표시, 단정, 금지 문자열, 서명 위치, Append-Only(장부 `.collab-ledger.json`), 턴 순서, 이름 (R1~R8, CONTRACT §19-1).
@@ -27,7 +27,7 @@
 - **PowerShell 7(`pwsh`)로 실행합니다.** Windows PowerShell 5.1(`powershell.exe`)에서는 안내를 보이고 멈춥니다.
 - 키 복사(LF 고정), AGS-CI(고정 태그 + 해시), `.gitignore` 3줄(공유 구역 `.agentshare/` 포함), 공유 구역 생성, `commit-msg` 훅, 없는 worklog 양식, `doctor` 점검까지 한 번에. **커밋·push는 하지 않습니다.**
 - 여러 레포: `.\kit\install\install_all.ps1 -Registry <레포 목록 표.md> -ReposRoot <레포 루트> -WhatIf` (계정·폴더별로 묶어 실행, `-Account`·`-Only`로 고르기)
-- 설치 뒤 그 레포 창의 에이전트가 `[TaskID] AGS-KIT 1.2.2 설치`로 커밋합니다. push는 사용자 승인 후.
+- 설치 뒤 그 레포 창의 에이전트가 `[TaskID] AGS-KIT 1.2.3 설치`로 커밋합니다. push는 사용자 승인 후.
 - v1.1에서 올리면: 옛 `pre-commit` 훅은 지워지고 `commit-msg` 훅으로 바뀝니다. NOW.md 잠금 표에 `모드` 열을 추가하세요 (`doctor` 🟡로 알려 줌).
 
 ## 3. 사용법 (레포 세션)
@@ -79,6 +79,16 @@
 | **C31** | 🟡 | 🟢 Task인데 공유 구역 WALK도 §5 `share:` 번호도 없음 (CONTRACT §21) |
 | **C32** | 🟡 | 공유 구역 다음 턴 24시간 넘게 대기 |
 | **C33** | 🔴/🟡 | `.agentshare/` gitignore 누락·파일 커밋 🔴 (폴더 없음 🟡) |
+| **C34** | 🟡 | 본문 단독 기록 코드(`CL`·`AG`)·NAMING.md '쓰지 말 것' (CONTRACT §22) |
+| **C35** | 🟡 | 🟢 Task에 `사전 점검:`·`사후 점검:`(health 점수) 줄 없음 |
+
+### 헬스 체크 (v1.2.3, CONTRACT §22)
+```
+python .agentkit/agentkit.py health                      # 이 레포 채점 (100점, 합격 = 🔴0 그리고 80점 이상)
+python <키> health --collab <공유 폴더> [--upto <파일>]   # 본부 TURN·REPORT 채점
+```
+- 출력의 점수·지문을 Task §2 `사전 점검:`, §5 `사후 점검:`에 붙입니다. 같은 파일이면 누가 채점해도 점수·지문이 같습니다.
+- 호칭 방식은 `worklog/NAMING.md`의 `profile:` (A `hq-nickname` 권장 · B `product-name` · C `custom`).
 
 ### 공유 구역 명령 (v1.2.2, CONTRACT §21)
 ```
@@ -95,7 +105,7 @@ python <키> share fleet <레포 루트>                                        
 
 ```json
 {
-  "schema": "agentkit-check/2", "kit": "1.2.2", "spec": "anti-gc-sync-pub v1.2.2",
+  "schema": "agentkit-check/2", "kit": "1.2.3", "spec": "anti-gc-sync-pub v1.2.3",
   "repo": "<레포>", "checked_at": "YYYY-MM-DD HH:mm",
   "summary": {"pass": 0, "warn": 0, "fail": 0, "skip": 0, "info": 0},
   "results": [{"id": "C1", "level": "pass|warn|fail|skip|info", "msg": "...", "items": ["..."]}],

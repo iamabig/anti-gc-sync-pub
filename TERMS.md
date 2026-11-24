@@ -69,3 +69,15 @@
 | `fixing` | 수정 Task가 맡음 |
 | `fixed` | 고쳐짐 (수정 Task 필수) |
 | `wontfix` | 고치지 않기로 함 (사유는 한 줄 설명에) |
+
+## 7. 부르는 이름 (v1.2.3, CONTRACT §22)
+
+> 기록 코드(§2)는 형식 안에서만 씁니다. 본문에서는 레포 `worklog/NAMING.md`가 고른 방식의 이름을 씁니다. 아래는 권장 방식 A(`hq-nickname`)입니다.
+
+| 부르는 이름 | 대상 | 기록 코드 | 대신 쓰지 말 것 |
+|---|---|---|---|
+| 클로드HQ | Claude 관리 본부 (`AGS-HQ-CL`) | `CL` | 본문의 단독 "CL" |
+| 안티HQ | Antigravity 관리 본부 (`AGS-HQ-AG`) | `AG` | 본문의 단독 "AG", "AG 서명" |
+| 클로드 세션 | 레포를 연 Claude 창 (`AGS-RS`) | `CL` | "CL 창" |
+| 안티 세션 | 레포를 연 Antigravity 창 (`AGS-RS`) | `AG` | "AG 창" |
+| 사용자 | 소유자 | `US` | — |
