@@ -644,7 +644,7 @@ def collab_results(d, forbid, use_ledger=True, upto=None):
             if gone:
                 res.append(r("R6", "fail", f"{f}: 지난 점검 이후 지워지거나 바뀐 줄 {gone}개 (Append-Only: 고칠 때는 덧붙이고 '정정'으로 표시)"))
     for f in ledger:
-        if f not in new_ledger:
+        if f not in new_ledger and not os.path.exists(os.path.join(d, f)):  # --upto 범위 밖 문서는 사라진 것이 아님 (v1.2.3 채점 대조에서 발견)
             res.append(r("R6", "fail", f"{f}: 지난 점검 이후 파일이 사라짐"))
     for topic, lst in turns.items():
         lst.sort()
