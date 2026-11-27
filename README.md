@@ -81,12 +81,15 @@
 | 파일 | 내용 |
 |---|---|
 | [CONTRACT.md](CONTRACT.md) | 계약 본문 |
+| [SECRETS_GUIDE.md](SECRETS_GUIDE.md) | 플랫폼별 시크릿 격리 (Cloudflare·Vercel·Supabase·AWS·GitHub) |
 | [TERMS.md](TERMS.md) | SSOT 용어와 에이전트 코드 |
 | [global/](global/) | 글로벌 룰 요약본 (에이전트별) |
 | [templates/](templates/) | worklog 양식 |
 | [CHANGELOG.md](CHANGELOG.md) | 버전 기록 |
 
-> 현재 확정본: 태그 **`v1.2.3`** (2026-11-24) · 호칭과 헬스 체크(§22: 부르는 이름 방식 A 권장·B·C, 사전·사후 점검, `health` 점수·지문), C34·C35
+> 현재 확정본: 태그 **`v1.2.4`** (2026-11-28) · 시크릿 격리(§24, [SECRETS_GUIDE.md](SECRETS_GUIDE.md)), 평문 시크릿 점검 C37(확실한 키는 커밋 차단, 의심은 경고, 값은 앞 4글자만), 설치 시 `.env*`·`.dev.vars*` gitignore
+>
+> 이전 확정본: 태그 **`v1.2.3`** (2026-11-24) · 호칭과 헬스 체크(§22: 부르는 이름 방식 A 권장·B·C, 사전·사후 점검, `health` 점수·지문), C34·C35
 >
 > 이전 확정본: 태그 **`v1.2.2`** (2026-11-24) · 레포 안 공유 구역(§21, `.agentshare/`·번호 목차·레벨별 HQ), C31~C33, 설치 보완(PowerShell 7·-Init), 글로벌 룰 적용 범위 점검
 >
