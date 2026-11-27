@@ -1,8 +1,8 @@
-<!-- anti-gc-sync-pub v1.2.3 · Antigravity 글로벌 룰 (설치: ~/.gemini/GEMINI.md) -->
-# 멀티에이전트 공통 계약 v1.2.3 (anti-gc-sync-pub)
+<!-- anti-gc-sync-pub v1.2.4 · Antigravity 글로벌 룰 (설치: ~/.gemini/GEMINI.md) -->
+# 멀티에이전트 공통 계약 v1.2.4 (anti-gc-sync-pub)
 
 **적용 범위:** 작업 폴더가 `<REPOS_ROOT>` 아래 레포일 때만 적용합니다. 그 밖의 프로젝트에서는 이 절을 무시합니다.
-원본: https://github.com/iamabig/anti-gc-sync-pub (태그 v1.2.3) · 레포 `AGENTS.md`와 충돌하면 더 엄격한 쪽을 따릅니다.
+원본: https://github.com/iamabig/anti-gc-sync-pub (태그 v1.2.4) · 레포 `AGENTS.md`와 충돌하면 더 엄격한 쪽을 따릅니다.
 
 이 레포에서는 Antigravity와 Claude가 `worklog/`로 서로 소통하며 함께 작업합니다. `worklog/`는 **컨텍스트 효율 도구**입니다: 전체를 읽지 말고 목차로 필요한 조각만 불러옵니다.
 
@@ -26,6 +26,7 @@
 17. **실측 범위**: "실측"에는 실행한 명령을 붙이고 **레포**인지 **운영**인지 구분합니다. 배포 경로·워커·예약 실행·라우트는 레포 파일만 보고 단정하지 않습니다. 레포 안 배포 설정 전체 → 배포 스크립트 → CI·자동 빌드 경로 → 운영 쪽 현재 상태 순으로 보고, 운영을 못 봤으면 "미확인"으로 적습니다. 배포·인프라를 다룬 Task 워크스루에는 `운영 확인: <읽기 전용 명령/화면> → <결과>` 또는 `운영 미확인: <이유>` 줄을 씁니다.
 18. **공유 구역**: 턴·플랜·워크스루는 레포 `.agentshare/`(gitignore)에 `agentkit.py share new|import`로 번호를 붙여 둡니다. 시작할 때 `context`의 공유 구역 현재 상태(마지막 작성자·다음 턴)를 봅니다. 에이전트 전용 저장소의 문서는 턴을 끝내기 전에 `share import`로 가져오고, 채팅으로 붙여 넣어 전달하지 않습니다. 결론·검증은 Task §5에 옮기고 `share: #번호`를 적습니다. 공유 구역에도 보안값 금지.
 19. **호칭·헬스 체크**: 본문에서는 레포 `worklog/NAMING.md`의 부르는 이름(권장: 클로드HQ·안티HQ·클로드 세션·안티 세션·사용자)을 쓰고, 기록 코드는 Task ID·파일 이름·백틱 안에서만 씁니다. 작업 시작 전과 끝난 뒤 `agentkit.py health`를 실행해 점수와 지문을 Task §2 `사전 점검:`·§5 `사후 점검:`에 적습니다(본부 TURN·REPORT는 `health --collab`). 🔴가 있거나 80점 미만이면 🟢로 보고하지 않습니다.
+20. **시크릿**: 비밀값(키·토큰·비밀번호·웹훅 주소)은 git에 글자 그대로 넣지 않고 플랫폼 금고(`wrangler secret put`·`vercel env add`·`supabase secrets set`·AWS Secrets Manager·GitHub Secrets)에 둡니다. `.env`·`.dev.vars`는 올리지 않고 `.env.example`(이름만)만 올립니다. 이미 올라간 키는 **재발급이 먼저**(SENSITIVE 모드), 그다음 파일에서 지움. 보고·기록에는 값 대신 종류·파일 이름만. 커밋 훅의 C37 🔴는 우회하지 않습니다 (원본 `SECRETS_GUIDE.md`).
 
 ### worklog 양식 (요약, 전체는 원본 `templates/`)
 - `NOW.md`: 갱신 시각·갱신자 / 🔒 작업 중 에이전트 표(에이전트 · Task ID · 모드 · 브랜치 · 영역 · 시작) / 🟡 진행 중 / 🔴 막힘 / ⏭️ 다음 할 일 / ✅ 최근 완료 3건 / ⚠️ 알아야 할 것
@@ -33,4 +34,4 @@
 - `BADCASES.md`: `일시 | Task ID | 에이전트 | 유형 | 한 줄 교훈`, 최신이 위
 - `IMPLEMENTATION.md`: `번호 | 상태 | 기능 | 위치 | 화면 표시 | 실제화 조건 | 만든 Task | 실제화 Task` · `DEFECTS.md`: `번호 | 심각도 | 상태 | 한 줄 설명 | 발견 Task | 수정 Task`
 - 작업 파일 머리말(**파일 첫 줄부터 `---` ~ `---`**, 코드펜스 금지): `id, title, status, agent, repo, work, continues, mode, deploy, priority, plan, eval, branch, started, updated, commits, impl, implements, defects_found, fixes, related, escalate` / 섹션: 1 목표 · 2 계획(사전 분석) · 3 체크리스트(WBS 표) · 4 진행 로그(모드 마크) · 5 워크스루(테스트 결과·사후 분석) · 6 인수인계 · 7 사고 기록 · 8 평가
-<!-- /anti-gc-sync-pub v1.2.3 -->
+<!-- /anti-gc-sync-pub v1.2.4 -->

@@ -7,7 +7,7 @@
   context [--n 5] [--work KEY] [--max-chars 12000]
                                컨텍스트 팩 출력 (새 세션은 이것만 읽는다)
   check [--json PATH] [--summary PATH] [--strict] [--since 50] [--hook --msg FILE] [--ahead-max 3]
-                               계약 점검 C1~C35. --strict면 🔴가 있을 때 종료코드 1
+                               계약 점검 C1~C35·C37 (C36은 다음 판 예약). --strict면 🔴가 있을 때 종료코드 1
   hash <파일>                  글로벌 룰 블록의 버전과 SHA-256 (C8). 블록이 없으면 파일 전체 SHA-256
   terms <TERMS.md>             이 키의 SSOT 상수와 TERMS.md 비교 (다르면 종료코드 1)
   collab <폴더> [--forbid 문자열]… [--strict]
@@ -22,8 +22,8 @@
 """
 import sys, os, re, json, hashlib, subprocess, datetime, glob, argparse, tempfile
 
-KIT_VERSION = "1.2.3"
-SPEC = "anti-gc-sync-pub v1.2.3"
+KIT_VERSION = "1.2.4"
+SPEC = "anti-gc-sync-pub v1.2.4"
 
 # ---- SSOT 상수 (TERMS.md와 같아야 함. `agentkit.py terms TERMS.md`로 비교) ----
 TERMS_COMPONENTS = ["AGS", "AGS-SPEC", "AGS-HQ-<코드>", "AGS-RS", "AGS-GR-<코드>", "AGS-KIT", "AGS-CI", "AGS-WL", "AGS-SHARE"]
@@ -56,6 +56,32 @@ FAIL_WORDS = re.compile(r"실패|오류|에러|FAIL|\berror\b|exception|tracebac
 OPEN = ("🟡", "🔴")
 IN_CI = bool(os.environ.get("GITHUB_ACTIONS") or os.environ.get("CI"))
 IGNORED_DIRTY = ("worklog/.agentkit-report.json", "agentkit-report.json", "agentkit-summary.md", ".wt/")
+
+# ---- C37 평문 시크릿 (v1.2.4). 출력에는 값을 쓰지 않고 앞 4글자만 ----
+SECRET_STRONG = [  # 모양이 확실한 키 → 🔴
+    ("AWS 액세스 키", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("OpenAI·Anthropic 키", re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_-]{20,}")),
+    ("GitHub 토큰", re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{22,})")),
+    ("Slack 토큰", re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}")),
+    ("Stripe 비밀 키", re.compile(r"\b(?:sk|rk)_live_[0-9A-Za-z]{20,}")),
+    ("Groq 키", re.compile(r"\bgsk_[A-Za-z0-9]{40,}")),
+    ("NVIDIA 키", re.compile(r"\bnvapi-[A-Za-z0-9_-]{40,}")),
+    ("Hugging Face 토큰", re.compile(r"\bhf_[A-Za-z0-9]{30,}")),
+    ("웹훅 주소", re.compile(r"https://(?:(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d+/[\w-]{20,}|hooks\.slack\.com/services/[A-Za-z0-9/]{20,})")),
+    ("개인 키", re.compile(r"-----BEGIN (?:[A-Z]+ )*PRIVATE KEY-----")),  # 본문(base64)이 뒤따를 때만 (머리 글자만 쓰는 파싱 코드는 통과)
+]
+RE_FAKE = re.compile(r"x{4,}|your|example|dummy|test|fake|sample|placeholder|here|1234|abcd|replace|redact|mask|\.\.\.", re.I)
+RE_TEST_PATH = re.compile(r"(^|/)(tests?|__tests__|__mocks__|fixtures?|e2e)/|\.(test|spec)\.[a-z]+$", re.I)
+RE_PEM_BODY = re.compile(r"[A-Za-z0-9+/]{40,}")
+RE_JWT = re.compile(r"\beyJ[\w-]{8,}\.(eyJ[\w-]{8,})\.[\w-]{8,}")
+RE_GOOGLE_KEY = re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")  # 브라우저 공개용도 많음 → 🟡
+RE_ENV_SECRET_FILE = re.compile(r"(^|/)(\.env(\.(local|dev|development|prod|production|stage|staging|test|preview)(\.local)?)?|\.dev\.vars(\.(?!example$|sample$|template$)[\w-]+)?)$")
+RE_SECRET_CFG = re.compile(r"(^|/)(wrangler[^/]*\.(toml|jsonc?)|vercel\.json|serverless\.ya?ml|config\.toml|docker-compose[^/]*\.ya?ml|compose\.ya?ml|netlify\.toml|fly\.toml)$")
+RE_SECRET_NAME = re.compile(r"""["']?([A-Za-z0-9_]*(?:SECRET|TOKEN|PASSWORD|PASSWD|PRIVATE_KEY|API_KEY|ACCESS_KEY|SERVICE_ROLE)[A-Za-z0-9_]*)["']?\s*[:=]\s*["']?([^"'\s,#}]+)""", re.I)
+RE_PLACEHOLDER = re.compile(r"^(`|env\(|\$\{|\$[A-Z_]|<|\{\{|x{3,}|\*{3,}|changeme|change-me|your[_-]|example|dummy|placeholder|todo|none|null|true|false|\d+$)", re.I)
+RE_REMOTE_CRED = re.compile(r"https?://[^/\s@]+@")
+SECRET_SKIP_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz", ".woff", ".woff2", ".ttf", ".mp4", ".mp3", ".lock", ".lockb")
+SECRET_ALLOW = "ags-allow"
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -1586,6 +1612,20 @@ def cmd_check(args):
         res.append(r("C34", "warn" if c34 else "pass", f"호칭 위반 {len(c34)}건 (호칭 {nm['profile']}: {' · '.join(nm['names'][:4])})", c34))
         res.append(r("C35", "warn" if c35 else "pass", f"🟢인데 사전·사후 점검(health 점수) 줄 없는 Task {len(c35)}건", c35))
 
+    # C37 평문 시크릿 (v1.2.4, 도입 시각 없이 지금 올라간 파일 전체. CI에서도 봄, remote 주소는 로컬만)
+    s37, w37, a37 = secret_scan(root)
+    if not IN_CI:
+        for line in git(root, "remote", "-v").splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and RE_REMOTE_CRED.search(parts[1]):
+                s37.append(f"remote `{parts[0]}` 주소 안에 토큰·비밀번호 → `git remote set-url {parts[0]} <SSH 주소>` + 그 토큰 재발급")
+                break
+    if git(root, "ls-files").strip() and not git_ok(root, "check-ignore", "-q", "--no-index", ".env"):
+        w37.append("`.env`가 .gitignore에 없음 → `.env*`·`.dev.vars` 추가, `!.env.example` 예외 (install_agentkit.ps1이 넣어 줌)")
+    res.append(r("C37", "fail" if s37 else ("warn" if w37 else "pass"),
+                 f"평문 시크릿 🔴{len(s37)} · 의심 🟡{len(w37)} · 예외 표시({SECRET_ALLOW}) {a37}줄 (값은 앞 4글자만 표시. 이미 push된 키는 지워도 소용없음 → 재발급 먼저)",
+                 s37 + w37))
+
     recent = []
     for line in index.splitlines():
         if line.startswith("|") and RE_ID_ANY.search(line):
@@ -1599,7 +1639,90 @@ def cmd_check(args):
     return finish(args, root, res, locks, recent, oi, od, gsum)
 
 
+def _mask(v):
+    return (v[:4] + "…") if len(v) > 4 else "…"
+
+
+def _jwt_role(payload):
+    import base64
+    try:
+        raw = base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode("utf-8", "replace")
+        return json.loads(raw).get("role", "")
+    except Exception:
+        return ""
+
+
+def secret_scan(root):
+    """C37: git에 올라간 파일의 평문 시크릿. 반환 (🔴 목록, 🟡 목록, 예외 줄 수). 값은 앞 4글자만."""
+    strong, weak, allowed = [], [], 0
+    files = [f for f in git(root, "ls-files").splitlines() if f.strip()]
+    for f in files:
+        fl = f.lower()
+        if RE_ENV_SECRET_FILE.search(f):
+            strong.append(f"`{f}` · 환경 변수 파일이 git에 올라감 → `git rm --cached {f}` + .gitignore, 안의 키는 재발급")
+            continue
+        if fl.endswith(SECRET_SKIP_EXT) or fl.startswith((".agentkit/", "node_modules/")) or "/node_modules/" in fl:
+            continue
+        p = os.path.join(root, f)
+        try:
+            if os.path.getsize(p) > 1_000_000:
+                continue
+            with open(p, "rb") as fh:
+                data = fh.read()
+        except OSError:
+            continue
+        if b"\x00" in data[:4096]:
+            continue
+        cfg = bool(RE_SECRET_CFG.search(f))
+        testp = bool(RE_TEST_PATH.search(f))
+        lines = data.decode("utf-8", "replace").splitlines()
+        for n, line in enumerate(lines, 1):
+            if len(line) > 4000:
+                continue
+            if SECRET_ALLOW in line:
+                if any(rx.search(line) for _, rx in SECRET_STRONG) or RE_JWT.search(line) or (cfg and RE_SECRET_NAME.search(line)):
+                    allowed += 1
+                continue
+            hit = False
+            for kind, rx in SECRET_STRONG:
+                m = rx.search(line)
+                if not m:
+                    continue
+                v = m.group(0)
+                if kind == "개인 키":
+                    nxt = lines[n].strip() if n < len(lines) else ""
+                    if not (RE_PEM_BODY.search(line[m.end():]) or RE_PEM_BODY.match(nxt)):
+                        continue
+                elif RE_FAKE.search(body := (v.rsplit("/", 1)[-1] if kind == "웹훅 주소" else v[4:])) or len(set(body)) < 8:
+                    continue  # 자리표시 값 (sk-xxxx, sk-your-key …)
+                if kind == "AWS 액세스 키" and "X-Amz-Credential=" in line[max(0, m.start() - 20):m.start()]:
+                    weak.append(f"`{f}:{n}` · 서명된 URL 안의 AWS 키 ID (남의 키일 수 있음, 만료 확인) · {_mask(v)}")
+                else:
+                    note = f" (테스트 파일: 가짜 값이면 같은 줄에 `{SECRET_ALLOW}: 테스트`)" if testp else ""
+                    (weak if testp else strong).append(f"`{f}:{n}` · {kind}{note} · {_mask(v)}")
+                hit = True; break
+            if hit:
+                continue
+            m = RE_JWT.search(line)
+            if m and _jwt_role(m.group(1)) == "service_role":
+                (weak if testp else strong).append(f"`{f}:{n}` · Supabase service_role 키 · {_mask(m.group(0))}"); continue
+            m = RE_GOOGLE_KEY.search(line)
+            if m:
+                weak.append(f"`{f}:{n}` · Google API 키 (브라우저 공개용이면 키 제한 확인 후 `# {SECRET_ALLOW}: 공개`) · {_mask(m.group(0))}"); continue
+            if cfg:
+                m = RE_SECRET_NAME.search(line)
+                if m:
+                    name, val = m.group(1), m.group(2)
+                    pub = re.match(r"(NEXT_PUBLIC_|VITE_|PUBLIC_|EXPO_PUBLIC_)", name, re.I) or "ANON" in name.upper()
+                    if not pub and len(val) >= 8 and not RE_PLACEHOLDER.match(val):
+                        weak.append(f"`{f}:{n}` · 설정 파일에 `{name}` 값이 글자 그대로 → 금고(wrangler secret put·vercel env add 등)로 · {_mask(val)}")
+    return strong, weak, allowed
+
+
 def finish(args, root, res, locks, recent, oi, od, gsum):
+    if getattr(args, "only", None):
+        keep = {x.strip().upper() for x in args.only.split(",")}
+        res = [x for x in res if x["id"] in keep]
     icon = {"pass": "🟢", "warn": "🟡", "fail": "🔴", "skip": "⚪", "info": "🔵"}
     summary = {k: sum(1 for x in res if x["level"] == k) for k in icon}
     print(f"agentkit {KIT_VERSION} · {SPEC} · {os.path.basename(root)}")
@@ -1689,7 +1812,7 @@ def main():
     p = sp.add_parser("new-id"); p.add_argument("agent", help="에이전트 코드(" + "|".join(AGENT_CODES) + ") 또는 IMP|DEF"); p.add_argument("--slug"); p.set_defaults(fn=cmd_new_id)
     p = sp.add_parser("context"); p.add_argument("--n", type=int, default=5); p.add_argument("--work"); p.add_argument("--max-chars", type=int, default=12000); p.set_defaults(fn=cmd_context)
     p = sp.add_parser("check"); p.add_argument("--json"); p.add_argument("--summary"); p.add_argument("--strict", action="store_true")
-    p.add_argument("--since", type=int, default=50); p.add_argument("--hook", action="store_true"); p.add_argument("--msg", help="commit-msg 훅이 넘기는 메시지 파일"); p.add_argument("--ahead-max", type=int, default=3); p.set_defaults(fn=cmd_check)
+    p.add_argument("--since", type=int, default=50); p.add_argument("--hook", action="store_true"); p.add_argument("--msg", help="commit-msg 훅이 넘기는 메시지 파일"); p.add_argument("--ahead-max", type=int, default=3); p.add_argument("--only", help="이 점검만 표시 (예: C37 또는 C33,C37)"); p.set_defaults(fn=cmd_check)
     p = sp.add_parser("hash"); p.add_argument("file"); p.set_defaults(fn=cmd_hash)
     p = sp.add_parser("terms"); p.add_argument("file"); p.set_defaults(fn=cmd_terms)
     p = sp.add_parser("collab"); p.add_argument("dir"); p.add_argument("--forbid", action="append", help="공유 문서에 있으면 안 되는 문자열 (여러 번)")

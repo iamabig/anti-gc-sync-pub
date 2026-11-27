@@ -166,6 +166,8 @@ v1.2 참조 필드 (번호로만 참조, 내용은 목록에): `deploy`(운영 �
 | **C33** | `.agentshare/`가 `.gitignore`에 없거나 그 안 파일이 git에 올라감 (🔴, 폴더가 없으면 🟡) (§21) | 공유 구역이 원격에 올라감 |
 | **C34** | `worklog/NAMING.md` 첫 커밋 뒤 시작한 Task·공유 문서 본문에 단독 기록 코드(`CL`·`AG`)나 NAMING.md의 '쓰지 말 것' (🟡) (§22) | 호칭 혼선 |
 | **C35** | 위 Task 중 🟢인데 `사전 점검:`·`사후 점검:`(health 점수) 줄이 없음 (🟡) (§22) | 지켰는지 스스로 확인하지 않음 |
+| C36 | (예약, §23 다이어그램 — v1.2.5) | |
+| **C37** | git에 올라간 파일의 평문 시크릿: 확실한 키 모양·올라간 `.env`·`.dev.vars`·remote 주소 토큰(로컬만) (🔴) / 설정 파일 비밀 칸의 글자 그대로 값·Google API 키·테스트 파일 키·`.env` gitignore 없음 (🟡). 값은 앞 4글자만 표시, 예외 `ags-allow:` (§24) | 키가 원격에 올라감 |
 
 - C17~C21·C23은 **v1.2 도입 뒤** Task부터 봅니다 (도입 시각 = `worklog/IMPLEMENTATION.md` 또는 `DEFECTS.md`가 처음 커밋된 때. 그 전 Task는 머리말에 `mode`가 있을 때만). C22·C24·C25·C26은 CI에서 건너뜁니다. C29·C30·C33은 CI에서도 봅니다 (C31·C32는 공유 구역이 없는 CI에서 건너뜀) (CI 복제본은 원격과 같음) — 로컬 훅과 컨텍스트 팩이 잡습니다.
 
@@ -389,6 +391,26 @@ v1.2 참조 필드 (번호로만 참조, 내용은 목록에): `deploy`(운영 �
    - **합격 = 🔴 0개 그리고 80점 이상** (`--min`으로 레포가 기준을 올릴 수 있음)
    - 지문(12자리)은 결과 목록의 해시입니다. 같은 파일을 누가 채점해도 점수와 지문이 같아야 합니다. 두 HQ의 채점이 같으면 리뷰 합격입니다 (`--upto <파일>`로 같은 범위를 채점).
 5. 🔴가 있거나 기준 점수 미만이면 완료(🟢)로 보고하지 않습니다.
+
+## §23. (예약) 다이어그램 최소화·전후 관계
+
+> 다음 판(v1.2.5)에서 정합니다. 번호와 점검 C36은 이 절을 위해 비워 둡니다.
+
+## §24. 시크릿 격리 (v1.2.4)
+
+> 사용자 원칙: "보안이 1번". 비밀값(키·토큰·비밀번호·웹훅 주소)은 **git에 글자 그대로 넣지 않고 플랫폼 금고에** 둡니다. 플랫폼별 방법은 [SECRETS_GUIDE.md](SECRETS_GUIDE.md).
+
+1. **금지**: 비밀값을 코드·문서·설정 파일(`wrangler.*`의 vars, `vercel.json`의 env, `serverless.yml`의 environment, `supabase/config.toml`)에 글자 그대로 쓰기. 환경 변수 파일(`.env`, `.env.local`, `.env.production` 등, `.dev.vars`)을 git에 올리기. git remote 주소에 토큰 넣기.
+2. **허용**: 금고(`wrangler secret put`, `vercel env add`, `supabase secrets set`, AWS Secrets Manager·SSM, GitHub Secrets), 로컬 파일(gitignore), 템플릿(`.env.example`, `.dev.vars.example` — 이름만, 값 없음), 브라우저 공개용 값(`NEXT_PUBLIC_`·`VITE_`·Supabase anon 키). 공개용 접두어에는 비밀을 넣지 않습니다(브라우저로 나감).
+3. **이미 올라간 비밀은 지워도 소용없습니다.** 순서: ① 그 서비스에서 재발급(옛 키 폐기) ② 금고에 새 키 ③ 파일에서 지움 ④ git 이력 지우기는 사용자 결정. 작업 모드는 SENSITIVE(§12-4), 종료에 `후속 영향:`(키 교체됨, 재배포 필요 등).
+4. **점검 C37** (`check`, 커밋 훅·CI 모두):
+   - 🔴 커밋 차단: 모양이 확실한 키(AWS·OpenAI·Anthropic·GitHub·Slack·Stripe live·Groq·NVIDIA·Hugging Face·Discord/Slack 웹훅·개인 키 본문·Supabase `service_role` JWT), git에 올라간 환경 변수 파일, remote 주소의 토큰(로컬만)
+   - 🟡 경고: 설정 파일의 `*_KEY`·`*_SECRET`·`*_TOKEN`·`PASSWORD` 칸에 글자 그대로 쓴 값, Google API 키, 서명된 URL 안의 AWS 키 ID, 테스트 파일 안의 키 모양, `.gitignore`에 `.env` 없음
+   - 통과: 자리표시 값(`sk-xxxx`, `your-key`, `<…>`, `env(...)`, `${…}`), 머리 글자만 있는 PEM 파싱 코드
+   - 예외: 같은 줄에 `ags-allow: <이유>` (공개 키·가짜 테스트 값). 예외 줄 수는 `check`에 표시됩니다.
+   - **출력에는 값을 쓰지 않습니다**(앞 4글자만). 리포트 JSON·공유 구역·보고서도 같습니다.
+5. 설치 스크립트가 `.gitignore`에 `.env`·`.env.*`·`.dev.vars`·`.dev.vars.*`와 예외 `!.env.example`·`!.env.*.example`을 넣습니다. 이미 올라간 파일은 그대로 두고 C37이 알려 줍니다.
+6. 전파 전에 HQ는 새 키로 레포를 **읽기만** 해서 걸리는 곳(종류·개수, 값 없음)을 사용자에게 먼저 보고합니다.
 
 ---
 

@@ -2,6 +2,7 @@
 
 | 버전 | 일시 (KST) | 상태 | 변경 |
 |---|---|---|---|
+| v1.2.4-rc | 2026-11-27 | 🟡 제안 (사용자 확정 "시크릿 먼저", 안티HQ 채점·서명 대기) | §24 시크릿 격리(금지·허용·재발급 순서), [SECRETS_GUIDE.md](SECRETS_GUIDE.md)(Cloudflare·Vercel·Supabase·AWS·Git 공통), 점검 C37 평문 시크릿(🔴 확실한 키·올라간 환경 변수 파일·remote 토큰 / 🟡 설정 파일 비밀 칸·Google 키·테스트 파일, 값은 앞 4글자만, 예외 `ags-allow:`), `check --only`, 설치 스크립트 `.gitignore`에 `.env*`·`.dev.vars*`(예외 `!.env.example`). §23·C36은 다이어그램 예약(v1.2.5) |
 | v1.2.3 | 2026-11-24 | 🟢 확정 (클로드HQ·안티HQ 같은 명령 채점 90점·지문 일치, 안티HQ 서명 TURN-010-04, 사용자 승인) | §22 호칭(부르는 이름 ↔ 기록 코드, `worklog/NAMING.md` 방식 A 권장 `hq-nickname`·B `product-name`·C `custom`), 사전·사후 점검 줄, `health` 헬스 체크(100점·합격 🔴0 그리고 80점·지문), 점검 C34·C35, collab R9·R10, TERMS §7 부르는 이름, 글로벌 룰 19항, TASK·TURN·REPORT 양식 |
 | v1.2.2 | 2026-11-24 | 🟢 확정 (Antigravity 서명 TURN-008-02, 사용자 승인) | §21 레포 안 공유 구역(AGS-SHARE): `.agentshare/`(gitignore), 번호·종류·작성자·판 이름, 자동 목차(현재 상태·Task별 최신), 에이전트 전용 저장소 문서 가져오기, 레벨별 HQ(`share fleet`). 점검 C31~C33. 글로벌 룰 18항. TASK 양식 `share:` 줄. 설치: PowerShell 7 안내, `install_all` -Init, 공유 구역 생성. `hash`가 적용 범위 경로를 빼고 비교, doctor가 글로벌 룰 자리표시자 점검 |
 | v1.2.1 | 2026-11-23 | 🟢 확정 22:47 (Antigravity 서명 TURN-007-02, 사용자 승인) | §20 실측 범위(실측(레포)·실측(운영)·문서·추측)와 인프라 판단 체크리스트, 워크스루 `운영 확인:`/`운영 미확인:` 줄, 점검 C29(같은 이름의 배포 설정 중복)·C30(운영 확인·실측 범위), C26 기본 브랜치 판정 보정(원격 HEAD가 다른 브랜치여도 main·master는 기본, 기본 브랜치의 지난 커밋은 🟡), 글로벌 룰 17항, TASK·REPORT·TURN 양식 근거 표시 |

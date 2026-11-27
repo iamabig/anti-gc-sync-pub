@@ -9,7 +9,7 @@
   하는 일 (모두 그 레포 안에서만, 커밋·push는 하지 않음):
     1. .agentkit\agentkit.py 복사 (줄바꿈 LF로 고정, 기존 버전 → 새 버전 표시)
     2. AGS-CI: .github\workflows\agent-contract.yml (고정 태그 + 해시. 기본: 🔴면 실패)
-    3. .gitignore 에 worklog/.agentkit-report.json, .wt/, .agentshare/ 추가 (없을 때만)
+    3. .gitignore 에 worklog/.agentkit-report.json, .wt/, .agentshare/, .env·.env.*·.dev.vars (예외 !.env.example) 추가 (없을 때만, v1.2.4)
     4. commit-msg 훅 설치 (v1.1 agentkit pre-commit 훅은 지움. 다른 훅이 있으면 덮어쓰지 않고 알림)
     5. worklog 양식: 없는 파일만 만듦 (v1.1 레포는 IMPLEMENTATION.md, DEFECTS.md가 추가됨)
     6. 공유 구역 .agentshare/ (gitignore, v1.2.2) 와 목차 INDEX.md
@@ -81,7 +81,8 @@ if (-not $NoCI) {
 # 3. .gitignore
 $gi = Join-Path $Repo '.gitignore'
 $cur = if (Test-Path $gi) { Get-Content $gi } else { @() }
-foreach ($line in @('worklog/.agentkit-report.json', '.wt/', '.agentshare/')) {
+# v1.2.4: 환경 변수 파일(.env*·.dev.vars)은 올리지 않음, 템플릿(.env.example)은 올림. 이미 올라간 파일은 그대로(C37이 알려 줌)
+foreach ($line in @('worklog/.agentkit-report.json', '.wt/', '.agentshare/', '.env', '.env.*', '!.env.example', '!.env.*.example', '.dev.vars', '.dev.vars.*')) {
   if ($cur -notcontains $line -and $PSCmdlet.ShouldProcess($gi, "추가: $line")) {
     Add-Content -Path $gi -Value $line -Encoding utf8NoBOM; Say '✅' ".gitignore += $line"
   }
